@@ -1,19 +1,23 @@
 package co.edu.uptc.users_service.service;
 
-import java.util.Set;
-
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
-import co.edu.uptc.users_service.dto.RegisterDTO;
-import co.edu.uptc.users_service.dto.UserDTO;
+import co.edu.uptc.users_service.dto.*;
 import co.edu.uptc.users_service.entity.Role;
 import co.edu.uptc.users_service.entity.User;
 import co.edu.uptc.users_service.mapper.UserMapper;
 import co.edu.uptc.users_service.repository.RoleRepository;
 import co.edu.uptc.users_service.repository.UserRepository;
+import co.edu.uptc.users_service.security.JwtService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -23,10 +27,14 @@ public class AuthService {
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
     private final UserMapper userMapper;
+    private final JwtService jwtService;
+    private final AuthenticationManager authenticationManager;
+
+    @Value("${jwt.expiration}")
+    private long expirationMs;
 
     @Transactional
     public UserDTO register(RegisterDTO dto) {
-
         if (userRepository.existsByEmail(dto.email())) {
             throw new RuntimeException("El email ya está registrado");
         }
@@ -49,7 +57,24 @@ public class AuthService {
                 .roles(Set.of(userRole))
                 .build();
 
-        User saved = userRepository.save(user);
-        return userMapper.toDTO(saved);
+        return userMapper.toDTO(userRepository.save(user));
+    }
+
+    @Transactional(readOnly = true)
+    public AuthResponseDTO login(LoginDTO dto) {
+        Authentication auth = authenticationManager.authenticate(
+                new UsernamePasswordAuthenticationToken(dto.email(), dto.password()));
+
+        UserDetails userDetails = (UserDetails) auth.getPrincipal();
+        String token = jwtService.generateToken(userDetails);
+
+        return new AuthResponseDTO(token, "Bearer", expirationMs / 1000);
+    }
+
+    @Transactional(readOnly = true)
+    public UserDTO getCurrentUser(String email) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
+        return userMapper.toDTO(user);
     }
 }

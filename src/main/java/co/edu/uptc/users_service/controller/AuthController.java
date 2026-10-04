@@ -1,7 +1,6 @@
 package co.edu.uptc.users_service.controller;
 
-import co.edu.uptc.users_service.dto.RegisterDTO;
-import co.edu.uptc.users_service.dto.UserDTO;
+import co.edu.uptc.users_service.dto.*;
 import co.edu.uptc.users_service.service.AuthService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -19,5 +18,10 @@ public class AuthController {
     @PostMapping("/register")
     public ResponseEntity<UserDTO> register(@Valid @RequestBody RegisterDTO dto) {
         return ResponseEntity.status(HttpStatus.CREATED).body(authService.register(dto));
+    }
+
+    @PostMapping("/login")
+    public ResponseEntity<AuthResponseDTO> login(@Valid @RequestBody LoginDTO dto) {
+        return ResponseEntity.ok(authService.login(dto));
     }
 }
