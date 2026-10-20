@@ -38,7 +38,7 @@ public class UserController {
     }
 
     @PatchMapping("/me/language")
-    @Operation(summary = "Marcar tutorial como visto")
+    @Operation(summary = "Cambiar idioma del usuario (es/en)")
     public ResponseEntity<UserDTO> updateLanguage(Authentication auth,
             @Valid @RequestBody LanguageDTO dto) {
         return ResponseEntity.ok(userService.updateLanguage(auth.getName(), dto));

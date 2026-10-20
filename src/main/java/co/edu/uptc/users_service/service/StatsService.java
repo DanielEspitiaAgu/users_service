@@ -5,11 +5,14 @@ import co.edu.uptc.users_service.entity.Achievement;
 import co.edu.uptc.users_service.entity.User;
 import co.edu.uptc.users_service.entity.UserAchievement;
 import co.edu.uptc.users_service.entity.UserResult;
+import co.edu.uptc.users_service.exception.ResourceNotFoundException;
 import co.edu.uptc.users_service.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -45,7 +48,20 @@ public class StatsService {
     @Transactional
     public ResultResponseDTO registerResult(Long userId, ResultDTO dto) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
+                .orElseThrow(() -> new ResourceNotFoundException("Usuario no encontrado"));
+
+        LocalDate today = LocalDate.now();
+        Optional<LocalDateTime> lastPlay = userResultRepository.findLastPlayDateByUserId(userId);
+        if (lastPlay.isEmpty()) {
+            user.setStreak(1);
+        } else {
+            LocalDate lastPlayDate = lastPlay.get().toLocalDate();
+            if (lastPlayDate.equals(today.minusDays(1))) {
+                user.setStreak(user.getStreak() + 1);
+            } else if (lastPlayDate.isBefore(today.minusDays(1))) {
+                user.setStreak(1);
+            }
+        }
 
         UserResult result = UserResult.builder()
                 .user(user)
@@ -144,6 +160,6 @@ public class StatsService {
 
     private User findUserByEmail(String email) {
         return userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
+                .orElseThrow(() -> new ResourceNotFoundException("Usuario no encontrado"));
     }
 }
