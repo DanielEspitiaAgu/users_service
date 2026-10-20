@@ -17,6 +17,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.Set;
 
 @Service
@@ -60,16 +61,23 @@ public class AuthService {
         return userMapper.toDTO(userRepository.save(user));
     }
 
-    @Transactional(readOnly = true)
-    public AuthResponseDTO login(LoginDTO dto) {
-        Authentication auth = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(dto.email(), dto.password()));
+ @Transactional(readOnly = true)
+public AuthResponseDTO login(LoginDTO dto) {
+    Authentication auth = authenticationManager.authenticate(
+            new UsernamePasswordAuthenticationToken(dto.email(), dto.password()));
 
-        UserDetails userDetails = (UserDetails) auth.getPrincipal();
-        String token = jwtService.generateToken(userDetails);
+    UserDetails userDetails = (UserDetails) auth.getPrincipal();
+    User user = userRepository.findByEmail(userDetails.getUsername())
+            .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
 
-        return new AuthResponseDTO(token, "Bearer", expirationMs / 1000);
-    }
+    List<String> roles = user.getRoles().stream()
+            .map(r -> r.getName().replaceFirst("^ROLE_", "")) 
+            .sorted()
+            .toList();
+
+    String token = jwtService.generateToken(userDetails, user.getId(), roles);
+    return new AuthResponseDTO(token, "Bearer", expirationMs / 1000);
+}
 
     @Transactional(readOnly = true)
     public UserDTO getCurrentUser(String email) {

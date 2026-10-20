@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
+import java.util.Collection;
 import java.util.Date;
 import java.util.function.Function;
 
@@ -25,14 +26,16 @@ public class JwtService {
         this.expiration = expiration;
     }
 
-    public String generateToken(UserDetails userDetails) {
-        return Jwts.builder()
-                .subject(userDetails.getUsername())
-                .issuedAt(new Date())
-                .expiration(new Date(System.currentTimeMillis() + expiration))
-                .signWith(key)
-                .compact();
-    }
+    public String generateToken(UserDetails userDetails, Long userId, Collection<String> roles) {
+    return Jwts.builder()
+            .subject(userDetails.getUsername())          
+            .claim("userId", String.valueOf(userId))
+            .claim("roles", roles)
+            .issuedAt(new Date())
+            .expiration(new Date(System.currentTimeMillis() + expiration))
+            .signWith(key, Jwts.SIG.HS256)
+            .compact();
+}
 
     public String extractUsername(String token) {
         return extractClaim(token, Claims::getSubject);
