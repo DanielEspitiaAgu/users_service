@@ -3,6 +3,7 @@ package co.edu.uptc.users_service.service;
 import co.edu.uptc.users_service.dto.*;
 import co.edu.uptc.users_service.entity.Role;
 import co.edu.uptc.users_service.entity.User;
+import co.edu.uptc.users_service.exception.ResourceNotFoundException;
 import co.edu.uptc.users_service.mapper.UserMapper;
 import co.edu.uptc.users_service.repository.RoleRepository;
 import co.edu.uptc.users_service.repository.UserRepository;
@@ -61,28 +62,28 @@ public class AuthService {
         return userMapper.toDTO(userRepository.save(user));
     }
 
- @Transactional(readOnly = true)
-public AuthResponseDTO login(LoginDTO dto) {
-    Authentication auth = authenticationManager.authenticate(
-            new UsernamePasswordAuthenticationToken(dto.email(), dto.password()));
+    @Transactional(readOnly = true)
+    public AuthResponseDTO login(LoginDTO dto) {
+        Authentication auth = authenticationManager.authenticate(
+                new UsernamePasswordAuthenticationToken(dto.email(), dto.password()));
 
-    UserDetails userDetails = (UserDetails) auth.getPrincipal();
-    User user = userRepository.findByEmail(userDetails.getUsername())
-            .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
+        UserDetails userDetails = (UserDetails) auth.getPrincipal();
+        User user = userRepository.findByEmail(userDetails.getUsername())
+                .orElseThrow(() -> new ResourceNotFoundException("Usuario no encontrado"));
 
-    List<String> roles = user.getRoles().stream()
-            .map(r -> r.getName().replaceFirst("^ROLE_", "")) 
-            .sorted()
-            .toList();
+        List<String> roles = user.getRoles().stream()
+                .map(r -> r.getName().startsWith("ROLE_") ? r.getName() : "ROLE_" + r.getName())
+                .sorted()
+                .toList();
 
-    String token = jwtService.generateToken(userDetails, user.getId(), roles);
-    return new AuthResponseDTO(token, "Bearer", expirationMs / 1000);
-}
+        String token = jwtService.generateToken(userDetails, user.getId(), roles);
+        return new AuthResponseDTO(token, "Bearer", expirationMs / 1000);
+    }
 
     @Transactional(readOnly = true)
     public UserDTO getCurrentUser(String email) {
         User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
+                .orElseThrow(() -> new ResourceNotFoundException("Usuario no encontrado"));
         return userMapper.toDTO(user);
     }
 }

@@ -5,7 +5,9 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 public interface UserResultRepository extends JpaRepository<UserResult, Long> {
 
@@ -17,4 +19,7 @@ public interface UserResultRepository extends JpaRepository<UserResult, Long> {
 
     @Query("SELECT COALESCE(SUM(r.timeSeconds), 0) FROM UserResult r WHERE r.user.id = :userId")
     long sumTimeByUserId(@Param("userId") Long userId);
+
+    @Query("SELECT MAX(r.createdAt) FROM UserResult r WHERE r.user.id = :userId")
+    Optional<LocalDateTime> findLastPlayDateByUserId(@Param("userId") Long userId);
 }

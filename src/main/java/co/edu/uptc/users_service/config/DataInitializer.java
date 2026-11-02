@@ -38,6 +38,7 @@ public class DataInitializer implements CommandLineRunner {
     public void run(String... args) {
         Role userRole = createRoleIfNotExists("ROLE_USER");
         Role adminRole = createRoleIfNotExists("ROLE_ADMIN");
+        createRoleIfNotExists("ROLE_SERVICE");
 
         createAchievementIfNotExists("FIRST_WIN", "Primera victoria",
                 "Gana tu primer caso", "🏆", "WINS>=1");

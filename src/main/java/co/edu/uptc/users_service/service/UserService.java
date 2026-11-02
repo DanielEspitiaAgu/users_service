@@ -2,6 +2,7 @@ package co.edu.uptc.users_service.service;
 
 import co.edu.uptc.users_service.dto.*;
 import co.edu.uptc.users_service.entity.User;
+import co.edu.uptc.users_service.exception.ResourceNotFoundException;
 import co.edu.uptc.users_service.mapper.UserMapper;
 import co.edu.uptc.users_service.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -45,6 +46,6 @@ public class UserService {
 
     private User findUserByEmail(String email) {
         return userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
+                .orElseThrow(() -> new ResourceNotFoundException("Usuario no encontrado"));
     }
 }
