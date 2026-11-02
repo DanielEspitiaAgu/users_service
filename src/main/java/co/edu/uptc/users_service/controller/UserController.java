@@ -11,6 +11,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.enums.ParameterIn;
 
 import java.util.List;
 
@@ -64,7 +66,8 @@ public class UserController {
     }
 
     @PostMapping("/{id}/results")
-    @Operation(summary = "Registrar resultado de partida (uso interno)")
+    @Operation(summary = "Registrar resultado de partida (USO INTERNO)", description = "Solo para otros servicios: exige la cabecera X-Internal-Key. El gateway lo bloquea para clientes externos.")
+    @Parameter(name = "X-Internal-Key", in = ParameterIn.HEADER, required = true)
     public ResponseEntity<ResultResponseDTO> registerResult(@PathVariable Long id,
             @Valid @RequestBody ResultDTO dto) {
         return ResponseEntity.ok(statsService.registerResult(id, dto));
