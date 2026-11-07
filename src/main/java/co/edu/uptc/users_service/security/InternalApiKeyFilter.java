@@ -22,15 +22,15 @@ public class InternalApiKeyFilter extends OncePerRequestFilter {
 
     private final byte[] expectedKey;
 
-    public InternalApiKeyFilter(@Value("${internal.api-key:}") String apiKey) {
-        this.expectedKey = apiKey.getBytes(StandardCharsets.UTF_8);
+    public InternalApiKeyFilter(@Value("${internal.api-token:}") String apiToken) {
+        this.expectedKey = apiToken.getBytes(StandardCharsets.UTF_8);
     }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
             FilterChain filterChain) throws ServletException, IOException {
 
-        String received = request.getHeader("X-Internal-Key");
+        String received = request.getHeader("X-Internal-Token");
         if (expectedKey.length > 0 && received != null
                 && SecurityContextHolder.getContext().getAuthentication() == null
                 && MessageDigest.isEqual(expectedKey, received.getBytes(StandardCharsets.UTF_8))) {

@@ -40,7 +40,8 @@ public class UserController {
     }
 
     @PatchMapping("/me/language")
-    @Operation(summary = "Cambiar idioma del usuario (es/en)")
+    @Operation(summary = "Cambiar idioma del usuario (es/en)",
+            description = "Actualiza el idioma preferido del usuario autenticado.")
     public ResponseEntity<UserDTO> updateLanguage(Authentication auth,
             @Valid @RequestBody LanguageDTO dto) {
         return ResponseEntity.ok(userService.updateLanguage(auth.getName(), dto));
@@ -66,8 +67,9 @@ public class UserController {
     }
 
     @PostMapping("/{id}/results")
-    @Operation(summary = "Registrar resultado de partida (USO INTERNO)", description = "Solo para otros servicios: exige la cabecera X-Internal-Key. El gateway lo bloquea para clientes externos.")
-    @Parameter(name = "X-Internal-Key", in = ParameterIn.HEADER, required = true)
+    @Operation(summary = "Registrar resultado de partida (USO INTERNO)",
+            description = "Solo para otros servicios internos: exige la cabecera X-Internal-Token.")
+    @Parameter(name = "X-Internal-Token", in = ParameterIn.HEADER, required = true)
     public ResponseEntity<ResultResponseDTO> registerResult(@PathVariable Long id,
             @Valid @RequestBody ResultDTO dto) {
         return ResponseEntity.ok(statsService.registerResult(id, dto));
