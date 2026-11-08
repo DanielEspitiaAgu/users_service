@@ -5,7 +5,6 @@ import co.edu.uptc.users_service.entity.Achievement;
 import co.edu.uptc.users_service.entity.User;
 import co.edu.uptc.users_service.entity.UserAchievement;
 import co.edu.uptc.users_service.entity.UserResult;
-import co.edu.uptc.users_service.exception.ResourceNotFoundException;
 import co.edu.uptc.users_service.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -21,19 +20,20 @@ import java.util.stream.Collectors;
 public class StatsService {
 
     private final UserRepository userRepository;
+    private final UserProfileService profileService;
     private final UserResultRepository userResultRepository;
     private final AchievementRepository achievementRepository;
     private final UserAchievementRepository userAchievementRepository;
 
     @Transactional(readOnly = true)
-    public StatsDTO getStats(String email) {
-        User user = findUserByEmail(email);
+    public StatsDTO getStats(String externalId) {
+        User user = profileService.getOrCreate(externalId);
         return buildStats(user);
     }
 
     @Transactional(readOnly = true)
-    public List<AchievementDTO> getAchievements(String email) {
-        User user = findUserByEmail(email);
+    public List<AchievementDTO> getAchievements(String externalId) {
+        User user = profileService.getOrCreate(externalId);
         return userAchievementRepository.findByUserId(user.getId()).stream()
                 .map(ua -> new AchievementDTO(
                         ua.getAchievement().getId(),
@@ -46,9 +46,9 @@ public class StatsService {
     }
 
     @Transactional
-    public ResultResponseDTO registerResult(Long userId, ResultDTO dto) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new ResourceNotFoundException("Usuario no encontrado"));
+    public ResultResponseDTO registerResult(String externalId, ResultDTO dto) {
+        User user = profileService.getOrCreate(externalId);
+        Long userId = user.getId();
 
         LocalDate today = LocalDate.now();
         Optional<LocalDateTime> lastPlay = userResultRepository.findLastPlayDateByUserId(userId);
@@ -158,8 +158,4 @@ public class StatsService {
         return false;
     }
 
-    private User findUserByEmail(String email) {
-        return userRepository.findByEmail(email)
-                .orElseThrow(() -> new ResourceNotFoundException("Usuario no encontrado"));
-    }
 }

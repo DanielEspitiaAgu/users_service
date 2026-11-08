@@ -4,17 +4,17 @@ import co.edu.uptc.users_service.dto.UserDTO;
 import co.edu.uptc.users_service.entity.User;
 import org.springframework.stereotype.Component;
 
-import java.util.stream.Collectors;
+import java.util.Set;
 
 @Component
 public class UserMapper {
 
-    public UserDTO toDTO(User user) {
+    public UserDTO toDTO(User user, Set<String> roles) {
         if (user == null)
             return null;
 
         return new UserDTO(
-                user.getId(),
+                user.getExternalId(),
                 user.getUsername(),
                 user.getEmail(),
                 user.getName(),
@@ -23,7 +23,7 @@ public class UserMapper {
                 user.getTutorialCompleted(),
                 user.getExperience(),
                 user.getStreak(),
-                user.getRoles().stream().map(r -> r.getName()).collect(Collectors.toSet()),
+                roles,
                 user.getCreatedAt());
     }
 }

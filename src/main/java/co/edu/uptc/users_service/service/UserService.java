@@ -2,12 +2,12 @@ package co.edu.uptc.users_service.service;
 
 import co.edu.uptc.users_service.dto.*;
 import co.edu.uptc.users_service.entity.User;
-import co.edu.uptc.users_service.exception.ResourceNotFoundException;
 import co.edu.uptc.users_service.mapper.UserMapper;
 import co.edu.uptc.users_service.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -15,10 +15,14 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final UserMapper userMapper;
+    private final UserProfileService profileService;
 
-    @Transactional
-    public UserDTO updateProfile(String email, UpdateProfileDTO dto) {
-        User user = findUserByEmail(email);
+    public UserDTO getOrCreate(String externalId, Set<String> roles) {
+        return userMapper.toDTO(profileService.getOrCreate(externalId), roles);
+    }
+
+    public UserDTO updateProfile(String externalId, Set<String> roles, UpdateProfileDTO dto) {
+        User user = profileService.getOrCreate(externalId);
 
         if (dto.name() != null) {
             user.setName(dto.name());
@@ -27,25 +31,18 @@ public class UserService {
             user.setAvatar(dto.avatar());
         }
 
-        return userMapper.toDTO(userRepository.save(user));
+        return userMapper.toDTO(userRepository.save(user), roles);
     }
 
-    @Transactional
-    public UserDTO updateLanguage(String email, LanguageDTO dto) {
-        User user = findUserByEmail(email);
+    public UserDTO updateLanguage(String externalId, Set<String> roles, LanguageDTO dto) {
+        User user = profileService.getOrCreate(externalId);
         user.setLanguage(dto.language());
-        return userMapper.toDTO(userRepository.save(user));
+        return userMapper.toDTO(userRepository.save(user), roles);
     }
 
-    @Transactional
-    public UserDTO updateTutorial(String email, TutorialDTO dto) {
-        User user = findUserByEmail(email);
+    public UserDTO updateTutorial(String externalId, Set<String> roles, TutorialDTO dto) {
+        User user = profileService.getOrCreate(externalId);
         user.setTutorialCompleted(dto.completed());
-        return userMapper.toDTO(userRepository.save(user));
-    }
-
-    private User findUserByEmail(String email) {
-        return userRepository.findByEmail(email)
-                .orElseThrow(() -> new ResourceNotFoundException("Usuario no encontrado"));
+        return userMapper.toDTO(userRepository.save(user), roles);
     }
 }
