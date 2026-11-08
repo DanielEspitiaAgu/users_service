@@ -4,7 +4,7 @@ import java.time.LocalDateTime;
 import java.util.Set;
 
 public record UserDTO(
-        Long id,
+        String userId,
         String username,
         String email,
         String name,

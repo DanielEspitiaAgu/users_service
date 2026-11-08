@@ -17,8 +17,7 @@ public class OpenApiConfig {
         return new OpenAPI()
                 .info(new Info()
                         .title("Usuarios Service API")
-                        .description("Microservicio de gestión de usuarios, roles, autenticación, "
-                                + "estadísticas y logros.")
+                        .description("Perfiles asociados al subject de Keycloak, estadísticas y logros. El Bearer se documenta como credencial del cliente; el servicio confía en encabezados verificados por el gateway.")
                         .version("1.0.0")
                         .contact(new Contact()
                                 .name("Daniel Espitia")
@@ -33,6 +32,6 @@ public class OpenApiConfig {
                 .type(SecurityScheme.Type.HTTP)
                 .scheme("bearer")
                 .bearerFormat("JWT")
-                .description("Ingresa el token JWT generado en /auth/login");
+                .description("Token Bearer de Keycloak presentado al API Gateway");
     }
 }
