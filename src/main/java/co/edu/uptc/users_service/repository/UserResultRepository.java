@@ -14,8 +14,16 @@ public interface UserResultRepository extends JpaRepository<UserResult, Long> {
     @Query("SELECT r FROM UserResult r WHERE r.user.id = :userId")
     List<UserResult> findByUserId(@Param("userId") Long userId);
 
+    @Query("SELECT r FROM UserResult r WHERE r.user.id = :userId AND r.matchId = :matchId")
+    Optional<UserResult> findByUserIdAndMatchId(@Param("userId") Long userId,
+            @Param("matchId") String matchId);
+
     @Query("SELECT COUNT(r) FROM UserResult r WHERE r.user.id = :userId AND r.won = true")
     long countWinsByUserId(@Param("userId") Long userId);
+
+    @Query("SELECT COUNT(DISTINCT r.caseId) FROM UserResult r "
+            + "WHERE r.user.id = :userId AND r.won = true")
+    long countUniqueCasesSolvedByUserId(@Param("userId") Long userId);
 
     @Query("SELECT COALESCE(SUM(r.timeSeconds), 0) FROM UserResult r WHERE r.user.id = :userId")
     long sumTimeByUserId(@Param("userId") Long userId);

@@ -6,7 +6,8 @@ import lombok.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "user_results")
+@Table(name = "user_results", uniqueConstraints = @UniqueConstraint(
+        name = "uq_user_results_user_match", columnNames = { "user_id", "match_id" }))
 @Getter
 @Setter
 @NoArgsConstructor
@@ -25,8 +26,14 @@ public class UserResult {
     @Column(name = "case_id", nullable = false)
     private String caseId;
 
+    @Column(name = "match_id", length = 255)
+    private String matchId;
+
     @Column(nullable = false, length = 20)
     private String mode;
+
+    @Column(length = 10)
+    private String difficulty;
 
     @Column(nullable = false)
     private Boolean won;
@@ -36,6 +43,10 @@ public class UserResult {
 
     @Column(name = "xp_delta", nullable = false)
     private Integer xpDelta;
+
+    @Column(name = "first_win_rewarded", nullable = false)
+    @Builder.Default
+    private Boolean firstWinRewarded = false;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
