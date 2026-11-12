@@ -48,13 +48,19 @@ public class GatewayIdentityFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return "GET".equals(request.getMethod()) && "/health".equals(request.getRequestURI());
+        return ("GET".equals(request.getMethod()) && "/health".equals(request.getRequestURI()))
+                || ("/prometheus".equals(request.getRequestURI())
+                && request.getHeader("X-Gateway-Secret") == null);
     }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
             FilterChain filterChain) throws ServletException, IOException {
         String path = request.getRequestURI();
+        if ("/prometheus".equals(path) && request.getHeader("X-Gateway-Secret") != null) {
+            reject(response);
+            return;
+        }
 
         if (isResultsRequest(request) && hasValidSecret(request.getHeader("X-Internal-Token"), internalTokenDigest)) {
             setAuthentication("internal-service", List.of(new SimpleGrantedAuthority("ROLE_SERVICE")));
