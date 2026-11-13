@@ -5,6 +5,7 @@ import co.edu.uptc.users_service.entity.Achievement;
 import co.edu.uptc.users_service.entity.User;
 import co.edu.uptc.users_service.entity.UserAchievement;
 import co.edu.uptc.users_service.entity.UserResult;
+import co.edu.uptc.users_service.exception.ResultConflictException;
 import co.edu.uptc.users_service.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -22,6 +23,7 @@ public class StatsService {
     private final UserRepository userRepository;
     private final UserProfileService profileService;
     private final UserResultRepository userResultRepository;
+    private final ResultWriteRepository resultWriteRepository;
     private final AchievementRepository achievementRepository;
     private final UserAchievementRepository userAchievementRepository;
 
@@ -47,40 +49,61 @@ public class StatsService {
 
     @Transactional
     public ResultResponseDTO registerResult(String externalId, ResultDTO dto) {
+        validateResultRequest(dto);
         User user = profileService.getOrCreate(externalId);
+        user = userRepository.findByExternalIdForUpdate(externalId)
+                .orElseThrow(() -> new IllegalStateException("No fue posible bloquear el perfil"));
         Long userId = user.getId();
 
-        LocalDate today = LocalDate.now();
-        Optional<LocalDateTime> lastPlay = userResultRepository.findLastPlayDateByUserId(userId);
-        if (lastPlay.isEmpty()) {
-            user.setStreak(1);
-        } else {
-            LocalDate lastPlayDate = lastPlay.get().toLocalDate();
-            if (lastPlayDate.equals(today.minusDays(1))) {
-                user.setStreak(user.getStreak() + 1);
-            } else if (lastPlayDate.isBefore(today.minusDays(1))) {
-                user.setStreak(1);
+        Optional<UserResult> persisted = userResultRepository.findByUserIdAndMatchId(userId, dto.matchId());
+        if (persisted.isPresent()) {
+            UserResult result = persisted.get();
+            if (!matchesRequest(result, dto)) {
+                throw new ResultConflictException();
             }
+            return toResponse(result, buildStats(user), List.of());
         }
 
-        UserResult result = UserResult.builder()
-                .user(user)
-                .caseId(dto.caseId())
-                .mode(dto.mode())
-                .won(dto.won())
-                .timeSeconds(dto.timeSeconds())
-                .xpDelta(dto.xpDelta())
-                .build();
-        userResultRepository.save(result);
+        int nextStreak = calculateNextStreak(userId, user.getStreak());
+        boolean classic = "CLASSIC".equals(dto.mode());
+        int initialXp = classic ? 0 : dto.xpDelta();
+        Long resultId = resultWriteRepository.insertIfAbsent(
+                userId, dto.matchId(), dto.caseId(), dto.mode(), dto.difficulty(),
+                dto.won(), dto.timeSeconds(), initialXp);
 
-        // Actualizar XP del usuario
-        user.setExperience(user.getExperience() + dto.xpDelta());
+        if (resultId == null) {
+            UserResult concurrentResult = userResultRepository
+                    .findByUserIdAndMatchId(userId, dto.matchId())
+                    .orElseThrow(() -> new IllegalStateException("No se pudo insertar ni recuperar el resultado"));
+            if (!matchesRequest(concurrentResult, dto)) {
+                throw new ResultConflictException();
+            }
+            return toResponse(concurrentResult, buildStats(user), List.of());
+        }
+
+        UserResult result = userResultRepository.findById(resultId)
+                .orElseThrow(() -> new IllegalStateException("No se pudo leer el resultado insertado"));
+        int appliedXp = initialXp;
+        boolean firstWinRewarded = false;
+
+        if (classic && Boolean.TRUE.equals(dto.won())) {
+            int reward = classicReward(dto.difficulty());
+            firstWinRewarded = resultWriteRepository.claimClassicFirstWin(
+                    userId, dto.caseId(), resultId, reward);
+            appliedXp = firstWinRewarded ? reward : 0;
+            resultWriteRepository.updateAppliedReward(resultId, appliedXp, firstWinRewarded);
+            result.setXpDelta(appliedXp);
+            result.setFirstWinRewarded(firstWinRewarded);
+        }
+
+        user.setStreak(nextStreak);
+        if (appliedXp != 0) {
+            user.setExperience(user.getExperience() + appliedXp);
+        }
         userRepository.save(user);
 
-        // Evaluar logros nuevos
         List<AchievementDTO> nuevos = evaluateAchievements(user);
-
-        return new ResultResponseDTO(buildStats(user), nuevos);
+        return toResponse(result, buildStats(user), nuevos);
     }
 
     private StatsDTO buildStats(User user) {
@@ -113,7 +136,73 @@ public class StatsService {
                 totalTime,
                 user.getStreak(),
                 bestTimes,
-                user.getExperience());
+                user.getExperience(),
+                Math.toIntExact(userResultRepository.countUniqueCasesSolvedByUserId(user.getId())));
+    }
+
+    private int calculateNextStreak(Long userId, int currentStreak) {
+        LocalDate today = LocalDate.now();
+        Optional<LocalDateTime> lastPlay = userResultRepository.findLastPlayDateByUserId(userId);
+        if (lastPlay.isEmpty()) {
+            return 1;
+        }
+        LocalDate lastPlayDate = lastPlay.get().toLocalDate();
+        if (lastPlayDate.equals(today.minusDays(1))) {
+            return currentStreak + 1;
+        }
+        if (lastPlayDate.isBefore(today.minusDays(1))) {
+            return 1;
+        }
+        return currentStreak;
+    }
+
+    private static void validateResultRequest(ResultDTO dto) {
+        if (dto == null || dto.matchId() == null || dto.matchId().isBlank()
+                || dto.matchId().length() > 255 || dto.caseId() == null || dto.caseId().isBlank()
+                || dto.caseId().length() > 255 || dto.won() == null || dto.timeSeconds() == null
+                || dto.timeSeconds() < 0) {
+            throw new IllegalArgumentException("Datos de resultado inválidos");
+        }
+        if (dto.mode() == null || !Set.of("CLASSIC", "TIMED", "VERSUS").contains(dto.mode())) {
+            throw new IllegalArgumentException("Modo de partida inválido");
+        }
+        if ("CLASSIC".equals(dto.mode())) {
+            if (dto.difficulty() == null || !Set.of("EASY", "MEDIUM", "HARD").contains(dto.difficulty())) {
+                throw new IllegalArgumentException("La dificultad CLASSIC debe ser EASY, MEDIUM o HARD");
+            }
+            if (dto.xpDelta() != null) {
+                throw new IllegalArgumentException("CLASSIC no acepta xpDelta; users_service calcula la recompensa");
+            }
+        } else if (dto.xpDelta() == null) {
+            throw new IllegalArgumentException("TIMED y VERSUS requieren el xpDelta del servicio interno");
+        }
+    }
+
+    private static int classicReward(String difficulty) {
+        return switch (difficulty) {
+            case "EASY" -> 50;
+            case "MEDIUM" -> 100;
+            case "HARD" -> 150;
+            default -> throw new IllegalArgumentException("Dificultad CLASSIC inválida");
+        };
+    }
+
+    private static boolean matchesRequest(UserResult result, ResultDTO dto) {
+        boolean sameTerminalFields = Objects.equals(result.getCaseId(), dto.caseId())
+                && Objects.equals(result.getMode(), dto.mode())
+                && Objects.equals(result.getWon(), dto.won())
+                && Objects.equals(result.getTimeSeconds(), dto.timeSeconds())
+                && Objects.equals(result.getDifficulty(), dto.difficulty());
+        return sameTerminalFields && ("CLASSIC".equals(dto.mode())
+                || Objects.equals(result.getXpDelta(), dto.xpDelta()));
+    }
+
+    private static ResultResponseDTO toResponse(UserResult result, StatsDTO stats,
+            List<AchievementDTO> newAchievements) {
+        return new ResultResponseDTO(
+                result.getMatchId(), result.getCaseId(), result.getMode(),
+                Boolean.TRUE.equals(result.getWon()), result.getXpDelta(),
+                Boolean.TRUE.equals(result.getFirstWinRewarded()), stats, newAchievements);
     }
 
     private List<AchievementDTO> evaluateAchievements(User user) {

@@ -7,7 +7,8 @@ public record StatsDTO(
         int totalTime,
         int streak,
         List<BestTimeDTO> bestTimes,
-        int experience) {
+        int experience,
+        int uniqueCasesSolved) {
     public record BestTimeDTO(String caseId, String mode, int bestTimeSeconds) {
     }
 }

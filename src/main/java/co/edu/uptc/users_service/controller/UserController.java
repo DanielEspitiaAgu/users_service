@@ -67,7 +67,9 @@ public class UserController {
 
     @PostMapping("/{id}/results")
     @Operation(summary = "Registrar resultado de partida para un jugador Keycloak (USO INTERNO)",
-            description = "Solo para otros servicios internos: exige la cabecera X-Internal-Token; el id de ruta es el sub externo.")
+            description = "Solo para otros servicios internos: exige X-Internal-Token. matchId es idempotente; "
+                    + "CLASSIC requiere dificultad y calcula XP aquí. TIMED/VERSUS conservan xpDelta enviado "
+                    + "por el servicio interno. Nunca es un endpoint para Godot.")
     @Parameter(name = "X-Internal-Token", in = ParameterIn.HEADER, required = true)
     public ResponseEntity<ResultResponseDTO> registerResult(@PathVariable String id,
             @Valid @RequestBody ResultDTO dto) {
