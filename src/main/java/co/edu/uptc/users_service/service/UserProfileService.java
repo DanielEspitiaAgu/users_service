@@ -1,35 +1,17 @@
 package co.edu.uptc.users_service.service;
 
 import co.edu.uptc.users_service.entity.User;
-import co.edu.uptc.users_service.exception.ResourceNotFoundException;
-import co.edu.uptc.users_service.repository.UserRepository;
+import co.edu.uptc.users_service.infrastructure.adapter.out.persistence.JpaProfileAdapter;
 import lombok.RequiredArgsConstructor;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
-
-import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
 public class UserProfileService {
+    private final JpaProfileAdapter profileAdapter;
 
-    private static final Pattern EXTERNAL_ID = Pattern.compile("[A-Za-z0-9-]{1,64}");
-
-    private final UserRepository userRepository;
-    private final UserProfileCreator profileCreator;
-
+    /** Transitional facade used by legacy language, tutorial, and result flows. */
     public User getOrCreate(String externalId) {
-        if (externalId == null || !EXTERNAL_ID.matcher(externalId).matches()) {
-            throw new IllegalArgumentException("X-User-Id inválido");
-        }
-
-        return userRepository.findByExternalId(externalId).orElseGet(() -> {
-            try {
-                return profileCreator.create(externalId);
-            } catch (DataIntegrityViolationException concurrentCreate) {
-                return userRepository.findByExternalId(externalId)
-                        .orElseThrow(() -> concurrentCreate);
-            }
-        });
+        return profileAdapter.getOrCreateEntity(externalId);
     }
 }

@@ -1,6 +1,10 @@
 package co.edu.uptc.users_service.controller;
 
 import co.edu.uptc.users_service.dto.*;
+import co.edu.uptc.users_service.application.port.in.GetOrCreateProfileUseCase;
+import co.edu.uptc.users_service.application.port.in.UpdateProfileUseCase;
+import co.edu.uptc.users_service.domain.model.ProfileUpdate;
+import co.edu.uptc.users_service.mapper.UserMapper;
 import co.edu.uptc.users_service.service.StatsService;
 import co.edu.uptc.users_service.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -23,19 +27,22 @@ import java.util.Set;
 public class UserController {
 
     private final UserService userService;
+    private final GetOrCreateProfileUseCase getOrCreateProfile;
+    private final UpdateProfileUseCase updateProfile;
+    private final UserMapper userMapper;
     private final StatsService statsService;
 
     @GetMapping("/me")
     @Operation(summary = "Obtener o crear el perfil del jugador autenticado por Keycloak")
     public ResponseEntity<UserDTO> me(Authentication auth) {
-        return ResponseEntity.ok(userService.getOrCreate(auth.getName(), getRoles(auth)));
+        return ResponseEntity.ok(userMapper.toDTO(getOrCreateProfile.getOrCreate(auth.getName()), getRoles(auth)));
     }
 
     @PutMapping("/me")
     @Operation(summary = "Actualizar nombre y avatar del perfil del jugador autenticado")
     public ResponseEntity<UserDTO> updateProfile(Authentication auth,
             @Valid @RequestBody UpdateProfileDTO dto) {
-        return ResponseEntity.ok(userService.updateProfile(auth.getName(), getRoles(auth), dto));
+        return ResponseEntity.ok(userMapper.toDTO(updateProfile.update(auth.getName(), new ProfileUpdate(dto.name(), dto.avatar())), getRoles(auth)));
     }
 
     @PatchMapping("/me/language")

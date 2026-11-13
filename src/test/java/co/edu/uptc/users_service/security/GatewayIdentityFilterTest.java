@@ -105,6 +105,33 @@ class GatewayIdentityFilterTest {
         assertNull(SecurityContextHolder.getContext().getAuthentication());
     }
 
+    @Test
+    void letsDirectMetricsRequestReachBasicSecurityChain() throws Exception {
+        MockHttpServletRequest request = request("GET", "/prometheus");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        filter.doFilter(request, response, chain);
+
+        assertEquals(200, response.getStatus());
+        assertNotNull(chain.getRequest());
+        assertNull(SecurityContextHolder.getContext().getAuthentication());
+    }
+
+    @Test
+    void rejectsMetricsRequestsForwardedByGateway() throws Exception {
+        MockHttpServletRequest request = request("GET", "/prometheus");
+        request.addHeader("X-Gateway-Secret", "gateway-secret");
+        request.addHeader("X-User-Id", "user-123");
+        request.addHeader("X-Roles", "USER");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        filter.doFilter(request, response, chain);
+
+        assertEquals(403, response.getStatus());
+        assertNull(chain.getRequest());
+    }
     private MockHttpServletRequest request(String method, String path) {
         MockHttpServletRequest request = new MockHttpServletRequest(method, path);
         request.setRequestURI(path);
