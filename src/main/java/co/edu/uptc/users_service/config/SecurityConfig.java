@@ -72,6 +72,7 @@ public class SecurityConfig {
                                 "/swagger-resources/**", "/webjars/**")
                         .permitAll()
                         .requestMatchers(HttpMethod.POST, "/users/*/results").hasRole("SERVICE")
+                        .requestMatchers(HttpMethod.GET, "/users/*/progression").hasRole("SERVICE")
                         .anyRequest().authenticated())
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .formLogin(AbstractHttpConfigurer::disable)
