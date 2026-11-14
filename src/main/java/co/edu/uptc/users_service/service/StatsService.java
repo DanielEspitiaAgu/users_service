@@ -26,11 +26,22 @@ public class StatsService {
     private final ResultWriteRepository resultWriteRepository;
     private final AchievementRepository achievementRepository;
     private final UserAchievementRepository userAchievementRepository;
+    private final ProgressionService progressionService;
 
     @Transactional(readOnly = true)
     public StatsDTO getStats(String externalId) {
         User user = profileService.getOrCreate(externalId);
         return buildStats(user);
+    }
+
+    @Transactional(readOnly = true)
+    public ProgressionDTO getProgression(String externalId) {
+        User user = profileService.getOrCreate(externalId);
+        int experience = user.getExperience();
+        return new ProgressionDTO(
+                experience,
+                progressionService.levelForExperience(experience),
+                progressionService.nextLevelExperience(experience));
     }
 
     @Transactional(readOnly = true)
@@ -110,6 +121,8 @@ public class StatsService {
         List<UserResult> results = userResultRepository.findByUserId(user.getId());
 
         int solvedCases = (int) results.stream().filter(UserResult::getWon).count();
+        long matchesPlayed = results.size();
+        long wins = solvedCases;
         int totalTime = results.stream().mapToInt(UserResult::getTimeSeconds).sum();
 
         // Best times: mínimo tiempo por (caseId, mode) solo de partidas ganadas
@@ -137,7 +150,11 @@ public class StatsService {
                 user.getStreak(),
                 bestTimes,
                 user.getExperience(),
-                Math.toIntExact(userResultRepository.countUniqueCasesSolvedByUserId(user.getId())));
+                Math.toIntExact(userResultRepository.countUniqueCasesSolvedByUserId(user.getId())),
+                matchesPlayed,
+                wins,
+                progressionService.levelForExperience(user.getExperience()),
+                progressionService.nextLevelExperience(user.getExperience()));
     }
 
     private int calculateNextStreak(Long userId, int currentStreak) {

@@ -59,6 +59,13 @@ public class UserController {
         return ResponseEntity.ok(statsService.getStats(auth.getName()));
     }
 
+    @GetMapping("/{id}/progression")
+    @Operation(summary = "Consultar progresión para servicios internos")
+    @Parameter(name = "X-Internal-Token", in = ParameterIn.HEADER, required = true)
+    public ResponseEntity<ProgressionDTO> progression(@PathVariable String id) {
+        return ResponseEntity.ok(statsService.getProgression(id));
+    }
+
     @GetMapping("/me/achievements")
     @Operation(summary = "Ver logros desbloqueados")
     public ResponseEntity<List<AchievementDTO>> achievements(Authentication auth) {
