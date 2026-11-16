@@ -1,6 +1,7 @@
 package co.edu.uptc.users_service.infrastructure.adapter.out.persistence;
 
 import co.edu.uptc.users_service.application.port.in.GetOrCreateProfileUseCase;
+import co.edu.uptc.users_service.entity.User;
 import co.edu.uptc.users_service.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
@@ -36,6 +37,25 @@ class ProfileCreationPostgresIntegrationTest {
 
     @Autowired private GetOrCreateProfileUseCase getOrCreate;
     @Autowired private UserRepository userRepository;
+
+    @Test
+    void firstAndRepeatedAccessPersistOneProfileWithDefaults() {
+        String externalId = "first-access-" + UUID.randomUUID().toString().replace("-", "");
+
+        var first = getOrCreate.getOrCreate(externalId);
+        var repeated = getOrCreate.getOrCreate(externalId);
+        User persisted = userRepository.findByExternalId(externalId).orElseThrow();
+
+        assertEquals(first, repeated);
+        assertEquals(externalId, persisted.getExternalId());
+        assertEquals("es", persisted.getLanguage());
+        assertFalse(persisted.getTutorialCompleted());
+        assertEquals(0, persisted.getExperience());
+        assertEquals(0, persisted.getStreak());
+        assertNotNull(persisted.getCreatedAt());
+        assertEquals(1, userRepository.findAll().stream()
+                .filter(user -> externalId.equals(user.getExternalId())).count());
+    }
 
     @Test
     void concurrentCreationForSameExternalIdPersistsExactlyOneProfile() throws Exception {

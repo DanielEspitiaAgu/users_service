@@ -6,4 +6,6 @@ import co.edu.uptc.users_service.domain.model.ProfileUpdate;
 public interface ProfileStore {
     PlayerProfile getOrCreate(String externalId);
     PlayerProfile update(String externalId, ProfileUpdate update);
+    PlayerProfile updateLanguage(String externalId, String language);
+    PlayerProfile updateTutorial(String externalId, boolean completed);
 }

@@ -1,11 +1,11 @@
-package co.edu.uptc.users_service.service;
+package co.edu.uptc.users_service.domain.service;
 
-import org.springframework.stereotype.Service;
+import org.springframework.stereotype.Component;
 
 import java.util.List;
 
-@Service
-public class ProgressionService {
+@Component
+public class ProgressionPolicy {
 
     private static final List<Integer> LEVEL_THRESHOLDS = List.of(
             0, 50, 100, 150, 200, 300, 425, 575, 750, 950,

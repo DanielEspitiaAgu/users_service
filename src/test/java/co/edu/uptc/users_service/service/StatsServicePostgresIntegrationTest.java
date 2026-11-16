@@ -1,5 +1,6 @@
 package co.edu.uptc.users_service.service;
 
+import co.edu.uptc.users_service.application.port.in.StatsUseCase;
 import co.edu.uptc.users_service.dto.ResultDTO;
 import co.edu.uptc.users_service.dto.ResultResponseDTO;
 import org.flywaydb.core.Flyway;
@@ -40,7 +41,7 @@ class StatsServicePostgresIntegrationTest {
     private static final String SCHEMA = "m61b3_service_it";
 
     @Autowired
-    private StatsService statsService;
+    private StatsUseCase statsService;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;

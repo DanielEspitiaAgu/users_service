@@ -2,14 +2,15 @@ package co.edu.uptc.users_service.controller;
 
 import co.edu.uptc.users_service.config.SecurityConfig;
 import co.edu.uptc.users_service.application.port.in.GetOrCreateProfileUseCase;
+import co.edu.uptc.users_service.application.port.in.StatsUseCase;
+import co.edu.uptc.users_service.application.port.in.UpdateLanguageUseCase;
 import co.edu.uptc.users_service.application.port.in.UpdateProfileUseCase;
+import co.edu.uptc.users_service.application.port.in.UpdateTutorialUseCase;
+import co.edu.uptc.users_service.application.exception.ProfileStoreException;
 import co.edu.uptc.users_service.domain.model.PlayerProfile;
 import co.edu.uptc.users_service.domain.model.ProfileUpdate;
-import co.edu.uptc.users_service.dto.UpdateProfileDTO;
 import co.edu.uptc.users_service.security.GatewayIdentityFilter;
 import co.edu.uptc.users_service.mapper.UserMapper;
-import co.edu.uptc.users_service.service.StatsService;
-import co.edu.uptc.users_service.service.UserService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -17,6 +18,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 
 import java.util.Set;
 
@@ -38,10 +40,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 })
 class UserProfileHttpCharacterizationTest {
     @Autowired private MockMvc mockMvc;
-    @MockitoBean private UserService userService;
-    @MockitoBean private StatsService statsService;
+    @MockitoBean private StatsUseCase statsUseCase;
     @MockitoBean private GetOrCreateProfileUseCase getOrCreateProfile;
     @MockitoBean private UpdateProfileUseCase updateProfile;
+    @MockitoBean private UpdateLanguageUseCase updateLanguage;
+    @MockitoBean private UpdateTutorialUseCase updateTutorial;
 
     @Test
     void getMeReturnsNewProfileContractAndUsesAuthenticatedSubjectAndRoles() throws Exception {
@@ -58,6 +61,16 @@ class UserProfileHttpCharacterizationTest {
         mockMvc.perform(get("/users/me").headers(gatewayHeaders("subject-existing", "ADMIN")))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.name").value("Detective"))
                 .andExpect(jsonPath("$.avatar").value("avatar.png")).andExpect(jsonPath("$.roles[0]").value("ADMIN"));
+    }
+
+    @Test
+    void protectedProfileRouteRejectsMissingOrUntrustedGatewayIdentity() throws Exception {
+        mockMvc.perform(get("/users/me"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/users/me").header("X-User-Id", "spoofed").header("X-Roles", "ADMIN"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/users/me").headers(gatewayHeaders("subject-1", "offline_access")))
+                .andExpect(status().isForbidden());
     }
 
     @Test
@@ -95,6 +108,38 @@ class UserProfileHttpCharacterizationTest {
                         .contentType("application/json").content("{\"name\":null,\"avatar\":\"" + "x".repeat(256) + "\"}"))
                 .andExpect(status().isBadRequest());
     }
+
+    @Test
+    void languageAndTutorialUpdatesUseTheAuthenticatedSubjectUseCases() throws Exception {
+        when(updateLanguage.updateLanguage("subject-existing", "en"))
+                .thenReturn(new PlayerProfile("subject-existing", null, null, null, null,
+                        "en", false, 0, 0, null));
+        when(updateTutorial.updateTutorial("subject-existing", true))
+                .thenReturn(new PlayerProfile("subject-existing", null, null, null, null,
+                        "en", true, 0, 0, null));
+
+        mockMvc.perform(MockMvcRequestBuilders.patch("/users/me/language")
+                        .headers(gatewayHeaders("subject-existing", "USER"))
+                        .contentType("application/json").content("{\"language\":\"en\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.language").value("en"));
+        mockMvc.perform(MockMvcRequestBuilders.put("/users/me/tutorial")
+                        .headers(gatewayHeaders("subject-existing", "USER"))
+                        .contentType("application/json").content("{\"completed\":true}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.tutorialCompleted").value(true));
+
+        verify(updateLanguage).updateLanguage("subject-existing", "en");
+        verify(updateTutorial).updateTutorial("subject-existing", true);
+    }
+
+    @Test
+    void profilePersistenceFailuresAreReportedAsUnavailable() throws Exception {
+        when(getOrCreateProfile.getOrCreate("subject-existing"))
+                .thenThrow(new ProfileStoreException("database unavailable", new IllegalStateException()));
+
+        mockMvc.perform(get("/users/me").headers(gatewayHeaders("subject-existing", "USER")))
+                .andExpect(status().isServiceUnavailable());
+    }
+
     private static PlayerProfile profile(String subject, String name, String avatar) {
         return new PlayerProfile(subject, null, null, name, avatar, "es", false, 0, 0, null);
     }

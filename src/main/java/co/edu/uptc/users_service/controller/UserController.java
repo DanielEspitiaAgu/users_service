@@ -2,11 +2,12 @@ package co.edu.uptc.users_service.controller;
 
 import co.edu.uptc.users_service.dto.*;
 import co.edu.uptc.users_service.application.port.in.GetOrCreateProfileUseCase;
+import co.edu.uptc.users_service.application.port.in.StatsUseCase;
+import co.edu.uptc.users_service.application.port.in.UpdateLanguageUseCase;
 import co.edu.uptc.users_service.application.port.in.UpdateProfileUseCase;
+import co.edu.uptc.users_service.application.port.in.UpdateTutorialUseCase;
 import co.edu.uptc.users_service.domain.model.ProfileUpdate;
 import co.edu.uptc.users_service.mapper.UserMapper;
-import co.edu.uptc.users_service.service.StatsService;
-import co.edu.uptc.users_service.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -26,11 +27,12 @@ import java.util.Set;
 @Tag(name = "Usuarios", description = "Operaciones sobre el perfil, estadísticas y logros del usuario autenticado")
 public class UserController {
 
-    private final UserService userService;
     private final GetOrCreateProfileUseCase getOrCreateProfile;
     private final UpdateProfileUseCase updateProfile;
+    private final UpdateLanguageUseCase updateLanguage;
+    private final UpdateTutorialUseCase updateTutorial;
     private final UserMapper userMapper;
-    private final StatsService statsService;
+    private final StatsUseCase statsUseCase;
 
     @GetMapping("/me")
     @Operation(summary = "Obtener o crear el perfil del jugador autenticado por Keycloak")
@@ -50,33 +52,35 @@ public class UserController {
             description = "Actualiza el idioma preferido del usuario autenticado.")
     public ResponseEntity<UserDTO> updateLanguage(Authentication auth,
             @Valid @RequestBody LanguageDTO dto) {
-        return ResponseEntity.ok(userService.updateLanguage(auth.getName(), getRoles(auth), dto));
+        return ResponseEntity.ok(userMapper.toDTO(
+                updateLanguage.updateLanguage(auth.getName(), dto.language()), getRoles(auth)));
     }
 
     @PutMapping("/me/tutorial")
     @Operation(summary = "Marcar tutorial como visto")
     public ResponseEntity<UserDTO> updateTutorial(Authentication auth,
             @Valid @RequestBody TutorialDTO dto) {
-        return ResponseEntity.ok(userService.updateTutorial(auth.getName(), getRoles(auth), dto));
+        return ResponseEntity.ok(userMapper.toDTO(
+                updateTutorial.updateTutorial(auth.getName(), dto.completed()), getRoles(auth)));
     }
 
     @GetMapping("/me/stats")
     @Operation(summary = "Ver estadísticas del usuario")
     public ResponseEntity<StatsDTO> stats(Authentication auth) {
-        return ResponseEntity.ok(statsService.getStats(auth.getName()));
+        return ResponseEntity.ok(statsUseCase.getStats(auth.getName()));
     }
 
     @GetMapping("/{id}/progression")
     @Operation(summary = "Consultar progresión para servicios internos")
     @Parameter(name = "X-Internal-Token", in = ParameterIn.HEADER, required = true)
     public ResponseEntity<ProgressionDTO> progression(@PathVariable String id) {
-        return ResponseEntity.ok(statsService.getProgression(id));
+        return ResponseEntity.ok(statsUseCase.getProgression(id));
     }
 
     @GetMapping("/me/achievements")
     @Operation(summary = "Ver logros desbloqueados")
     public ResponseEntity<List<AchievementDTO>> achievements(Authentication auth) {
-        return ResponseEntity.ok(statsService.getAchievements(auth.getName()));
+        return ResponseEntity.ok(statsUseCase.getAchievements(auth.getName()));
     }
 
     @PostMapping("/{id}/results")
@@ -87,7 +91,7 @@ public class UserController {
     @Parameter(name = "X-Internal-Token", in = ParameterIn.HEADER, required = true)
     public ResponseEntity<ResultResponseDTO> registerResult(@PathVariable String id,
             @Valid @RequestBody ResultDTO dto) {
-        return ResponseEntity.ok(statsService.registerResult(id, dto));
+        return ResponseEntity.ok(statsUseCase.registerResult(id, dto));
     }
 
     private Set<String> getRoles(Authentication auth) {

@@ -2,7 +2,7 @@ package co.edu.uptc.users_service.infrastructure.adapter.out.persistence;
 
 import co.edu.uptc.users_service.entity.User;
 import co.edu.uptc.users_service.repository.UserRepository;
-import co.edu.uptc.users_service.service.UserProfileCreator;
+import co.edu.uptc.users_service.domain.model.ProfileUpdate;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
 
@@ -14,7 +14,8 @@ import static org.mockito.Mockito.*;
 class JpaProfileAdapterTest {
     private final UserRepository repository = mock(UserRepository.class);
     private final UserProfileCreator creator = mock(UserProfileCreator.class);
-    private final JpaProfileAdapter adapter = new JpaProfileAdapter(repository, creator);
+    private final JpaUserProfileAccess profileAccess = new JpaUserProfileAccess(repository, creator);
+    private final JpaProfileAdapter adapter = new JpaProfileAdapter(profileAccess, repository);
 
     @Test
     void createsAndMapsAProfileThroughTheIndependentTransactionCreator() {
@@ -52,8 +53,39 @@ class JpaProfileAdapterTest {
         User existing = User.builder().id(4L).externalId("subject-4").name("Keep").avatar("keep.png").build();
         when(repository.findByExternalId("subject-4")).thenReturn(Optional.of(existing));
         when(repository.save(existing)).thenReturn(existing);
-        var updated = adapter.update("subject-4", new co.edu.uptc.users_service.domain.model.ProfileUpdate(null, "new.png"));
+        var updated = adapter.update("subject-4", new ProfileUpdate(null, "new.png"));
         assertEquals("Keep", updated.name());
         assertEquals("new.png", updated.avatar());
+    }
+
+    @Test
+    void repeatedFirstAccessCreatesOnceAndReturnsThePersistedProfile() {
+        User persisted = User.builder().id(5L).externalId("subject-5").language("es")
+                .tutorialCompleted(false).experience(0).streak(0).build();
+        when(repository.findByExternalId("subject-5")).thenReturn(Optional.empty(), Optional.of(persisted));
+        when(creator.create("subject-5")).thenReturn(persisted);
+
+        var first = adapter.getOrCreate("subject-5");
+        var second = adapter.getOrCreate("subject-5");
+
+        assertEquals(first, second);
+        verify(creator, times(1)).create("subject-5");
+        verify(repository, times(2)).findByExternalId("subject-5");
+    }
+
+    @Test
+    void languageAndTutorialUpdatesUseThePersistenceAdapter() {
+        User existing = User.builder().id(6L).externalId("subject-6").language("es")
+                .tutorialCompleted(false).experience(0).streak(0).build();
+        when(repository.findByExternalId("subject-6")).thenReturn(Optional.of(existing));
+        when(repository.save(existing)).thenReturn(existing);
+
+        var translated = adapter.updateLanguage("subject-6", "en");
+        var tutorial = adapter.updateTutorial("subject-6", true);
+
+        assertEquals("en", translated.language());
+        assertTrue(tutorial.tutorialCompleted());
+        verify(repository, times(2)).save(existing);
+        verifyNoInteractions(creator);
     }
 }

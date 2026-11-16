@@ -3,33 +3,29 @@ package co.edu.uptc.users_service.infrastructure.adapter.out.persistence;
 import co.edu.uptc.users_service.application.exception.ProfileStoreException;
 import co.edu.uptc.users_service.application.port.out.ProfileStore;
 import co.edu.uptc.users_service.domain.model.PlayerProfile;
-import co.edu.uptc.users_service.domain.model.ProfileIdentityPolicy;
 import co.edu.uptc.users_service.domain.model.ProfileUpdate;
 import co.edu.uptc.users_service.entity.User;
 import co.edu.uptc.users_service.repository.UserRepository;
-import co.edu.uptc.users_service.service.UserProfileCreator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataAccessException;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Repository;
-
-import java.util.Optional;
+import org.springframework.transaction.annotation.Transactional;
 
 @Repository
 @RequiredArgsConstructor
 public class JpaProfileAdapter implements ProfileStore {
+    private final JpaUserProfileAccess profileAccess;
     private final UserRepository userRepository;
-    private final UserProfileCreator profileCreator;
 
     @Override
     public PlayerProfile getOrCreate(String externalId) {
-        return toDomain(getOrCreateEntity(externalId));
+        return toDomain(profileAccess.getOrCreate(externalId));
     }
 
     @Override
     public PlayerProfile update(String externalId, ProfileUpdate update) {
         try {
-            User user = getOrCreateEntity(externalId);
+            User user = profileAccess.getOrCreate(externalId);
             if (update.name() != null) user.setName(update.name());
             if (update.avatar() != null) user.setAvatar(update.avatar());
             return toDomain(userRepository.save(user));
@@ -38,24 +34,25 @@ public class JpaProfileAdapter implements ProfileStore {
         }
     }
 
-    /** Transitional entity bridge for language/tutorial and result services. */
-    public User getOrCreateEntity(String externalId) {
-        ProfileIdentityPolicy.requireValid(externalId);
+    @Override
+    @Transactional
+    public PlayerProfile updateLanguage(String externalId, String language) {
         try {
-            Optional<User> existing = userRepository.findByExternalId(externalId);
-            if (existing.isPresent()) return existing.get();
-            try {
-                return profileCreator.create(externalId);
-            } catch (DataIntegrityViolationException concurrentCreate) {
-                try {
-                    return userRepository.findByExternalId(externalId)
-                            .orElseThrow(() -> persistenceFailure(concurrentCreate));
-                } catch (DataAccessException rereadFailure) {
-                    throw persistenceFailure(rereadFailure);
-                }
-            }
-        } catch (ProfileStoreException failure) {
-            throw failure;
+            User user = profileAccess.getOrCreate(externalId);
+            user.setLanguage(language);
+            return toDomain(userRepository.save(user));
+        } catch (DataAccessException failure) {
+            throw persistenceFailure(failure);
+        }
+    }
+
+    @Override
+    @Transactional
+    public PlayerProfile updateTutorial(String externalId, boolean completed) {
+        try {
+            User user = profileAccess.getOrCreate(externalId);
+            user.setTutorialCompleted(completed);
+            return toDomain(userRepository.save(user));
         } catch (DataAccessException failure) {
             throw persistenceFailure(failure);
         }

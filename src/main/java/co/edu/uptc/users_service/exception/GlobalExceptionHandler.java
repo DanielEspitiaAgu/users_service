@@ -1,5 +1,6 @@
 package co.edu.uptc.users_service.exception;
 
+import co.edu.uptc.users_service.application.exception.ProfileStoreException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -7,7 +8,6 @@ import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
@@ -33,6 +33,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ResultConflictException.class)
     public ResponseEntity<Map<String, Object>> handleResultConflict(ResultConflictException ex) {
         return buildResponse(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
+    @ExceptionHandler(ProfileStoreException.class)
+    public ResponseEntity<Map<String, Object>> handleProfileStoreFailure(ProfileStoreException ex) {
+        return buildResponse(HttpStatus.SERVICE_UNAVAILABLE, "No fue posible acceder al perfil");
     }
 
     @ExceptionHandler(RuntimeException.class)

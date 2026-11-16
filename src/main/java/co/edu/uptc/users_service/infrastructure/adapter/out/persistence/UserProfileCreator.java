@@ -1,4 +1,4 @@
-package co.edu.uptc.users_service.service;
+package co.edu.uptc.users_service.infrastructure.adapter.out.persistence;
 
 import co.edu.uptc.users_service.entity.User;
 import co.edu.uptc.users_service.repository.UserRepository;
