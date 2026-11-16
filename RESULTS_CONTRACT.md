@@ -69,10 +69,9 @@ claim in `classic_case_rewards`.
 
 ## Compatibility rollout
 
-The current `partidas-service` caller sends no `matchId` and does not send
-`difficulty`; this service intentionally rejects that old payload under the new
-contract. Before deploying this change with the current caller, coordinate an
-update to pass the persisted match ID and server-sourced difficulty. Do not create
-synthetic match IDs to conceal this incompatibility: doing so would lose retry
+The current `partidas-service` CLASSIC caller passes the persisted match ID and
+the difficulty retrieved from `cases-service`; TIMED/VERSUS pass their persisted
+match ID and omit difficulty. These payloads match this contract. Do not create
+synthetic match IDs to conceal incompatibilities: doing so would lose retry
 idempotency. TIMED/VERSUS `xpDelta` remains accepted from the authenticated
-internal service so their current formulas can be preserved during that rollout.
+internal service so their current formulas can be preserved.
