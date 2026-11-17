@@ -25,7 +25,7 @@ import java.util.regex.Pattern;
 public class GatewayIdentityFilter extends OncePerRequestFilter {
 
     private static final Pattern EXTERNAL_ID = Pattern.compile("[A-Za-z0-9-]{1,64}");
-    private static final Pattern RESULTS_PATH = Pattern.compile("/users/[^/]+/results");
+    private static final Pattern INTERNAL_PATH = Pattern.compile("/users/[^/]+/(results|progression)");
     private static final Set<String> PLAYER_ROLES = Set.of("USER", "ADMIN");
     private static final List<String> DOCUMENTATION_PATHS = List.of(
             "/swagger-ui/", "/swagger-ui.html", "/v3/api-docs", "/swagger-resources/", "/webjars/");
@@ -62,7 +62,7 @@ public class GatewayIdentityFilter extends OncePerRequestFilter {
             return;
         }
 
-        if (isResultsRequest(request) && hasValidSecret(request.getHeader("X-Internal-Token"), internalTokenDigest)) {
+        if (isInternalRequest(request) && hasValidSecret(request.getHeader("X-Internal-Token"), internalTokenDigest)) {
             setAuthentication("internal-service", List.of(new SimpleGrantedAuthority("ROLE_SERVICE")));
             filterChain.doFilter(request, response);
             return;
@@ -97,8 +97,10 @@ public class GatewayIdentityFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
-    private boolean isResultsRequest(HttpServletRequest request) {
-        return "POST".equals(request.getMethod()) && RESULTS_PATH.matcher(request.getRequestURI()).matches();
+    private boolean isInternalRequest(HttpServletRequest request) {
+        return INTERNAL_PATH.matcher(request.getRequestURI()).matches()
+                && (("POST".equals(request.getMethod()) && request.getRequestURI().endsWith("/results"))
+                || ("GET".equals(request.getMethod()) && request.getRequestURI().endsWith("/progression")));
     }
 
     private boolean isDocumentationPath(String path) {
