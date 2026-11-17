@@ -1,13 +1,14 @@
 package co.edu.uptc.users_service.config;
 
+import co.edu.uptc.users_service.exception.ApiErrorResponse;
 import co.edu.uptc.users_service.security.GatewayIdentityFilter;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -46,21 +47,31 @@ public class SecurityConfig {
 
     @Bean
     @Order(1)
-    public SecurityFilterChain metricsFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain metricsFilterChain(HttpSecurity http, ObjectMapper objectMapper) throws Exception {
         http
                 .securityMatcher("/prometheus")
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
-                .httpBasic(Customizer.withDefaults())
+                .httpBasic(basic -> basic.authenticationEntryPoint((request, response, exception) ->
+                        ApiErrorResponse.write(response, objectMapper,
+                                org.springframework.http.HttpStatus.UNAUTHORIZED,
+                                "Autenticación requerida")))
                 .formLogin(AbstractHttpConfigurer::disable)
+                .exceptionHandling(errors -> errors
+                        .authenticationEntryPoint((request, response, exception) -> ApiErrorResponse.write(
+                                response, objectMapper, org.springframework.http.HttpStatus.UNAUTHORIZED,
+                                "Autenticación requerida"))
+                        .accessDeniedHandler((request, response, exception) -> ApiErrorResponse.write(
+                                response, objectMapper, org.springframework.http.HttpStatus.FORBIDDEN,
+                                "Permisos insuficientes")))
                 .addFilterBefore(gatewayIdentityFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 
     @Bean
     @Order(2)
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain filterChain(HttpSecurity http, ObjectMapper objectMapper) throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -76,6 +87,13 @@ public class SecurityConfig {
                         .anyRequest().authenticated())
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .formLogin(AbstractHttpConfigurer::disable)
+                .exceptionHandling(errors -> errors
+                        .authenticationEntryPoint((request, response, exception) -> ApiErrorResponse.write(
+                                response, objectMapper, org.springframework.http.HttpStatus.UNAUTHORIZED,
+                                "Autenticación requerida"))
+                        .accessDeniedHandler((request, response, exception) -> ApiErrorResponse.write(
+                                response, objectMapper, org.springframework.http.HttpStatus.FORBIDDEN,
+                                "Permisos insuficientes")))
                 .addFilterBefore(gatewayIdentityFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();

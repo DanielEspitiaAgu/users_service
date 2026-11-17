@@ -1,5 +1,6 @@
 package co.edu.uptc.users_service.security;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.FilterChain;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -13,7 +14,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class GatewayIdentityFilterTest {
 
-    private final GatewayIdentityFilter filter = new GatewayIdentityFilter("gateway-secret", "internal-token");
+    private final GatewayIdentityFilter filter = new GatewayIdentityFilter(
+            "gateway-secret", "internal-token", new ObjectMapper());
 
     @AfterEach
     void clearAuthentication() {

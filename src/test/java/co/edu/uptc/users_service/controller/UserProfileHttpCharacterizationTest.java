@@ -66,7 +66,10 @@ class UserProfileHttpCharacterizationTest {
     @Test
     void protectedProfileRouteRejectsMissingOrUntrustedGatewayIdentity() throws Exception {
         mockMvc.perform(get("/users/me"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403))
+                .andExpect(jsonPath("$.error").value("FORBIDDEN"))
+                .andExpect(jsonPath("$.message").isNotEmpty());
         mockMvc.perform(get("/users/me").header("X-User-Id", "spoofed").header("X-Roles", "ADMIN"))
                 .andExpect(status().isForbidden());
         mockMvc.perform(get("/users/me").headers(gatewayHeaders("subject-1", "offline_access")))
@@ -90,7 +93,10 @@ class UserProfileHttpCharacterizationTest {
     void putRejectsValuesOverExistingValidationLimits() throws Exception {
         mockMvc.perform(put("/users/me").headers(gatewayHeaders("subject-existing", "USER"))
                         .contentType("application/json").content("{\"name\":\"" + "x".repeat(101) + "\",\"avatar\":null}"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.status").value(422))
+                .andExpect(jsonPath("$.error").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.details.errors[0].field").value("name"));
     }
 
     @Test
@@ -106,7 +112,8 @@ class UserProfileHttpCharacterizationTest {
     void putRejectsAvatarOverExistingValidationLimit() throws Exception {
         mockMvc.perform(put("/users/me").headers(gatewayHeaders("subject-existing", "USER"))
                         .contentType("application/json").content("{\"name\":null,\"avatar\":\"" + "x".repeat(256) + "\"}"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.error").value("VALIDATION_ERROR"));
     }
 
     @Test
@@ -137,7 +144,9 @@ class UserProfileHttpCharacterizationTest {
                 .thenThrow(new ProfileStoreException("database unavailable", new IllegalStateException()));
 
         mockMvc.perform(get("/users/me").headers(gatewayHeaders("subject-existing", "USER")))
-                .andExpect(status().isServiceUnavailable());
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.status").value(503))
+                .andExpect(jsonPath("$.error").value("UPSTREAM_UNAVAILABLE"));
     }
 
     private static PlayerProfile profile(String subject, String name, String avatar) {

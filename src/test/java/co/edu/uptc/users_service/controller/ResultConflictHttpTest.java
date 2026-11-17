@@ -2,6 +2,7 @@ package co.edu.uptc.users_service.controller;
 
 import co.edu.uptc.users_service.exception.GlobalExceptionHandler;
 import co.edu.uptc.users_service.exception.ResultConflictException;
+import org.springframework.mock.web.MockHttpServletRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 
@@ -12,6 +13,7 @@ class ResultConflictHttpTest {
     @Test
     void contradictoryMatchIdIsMappedToHttp409() {
         assertEquals(HttpStatus.CONFLICT,
-                new GlobalExceptionHandler().handleResultConflict(new ResultConflictException()).getStatusCode());
+                new GlobalExceptionHandler().handleResultConflict(
+                        new ResultConflictException(), new MockHttpServletRequest()).getStatusCode());
     }
 }

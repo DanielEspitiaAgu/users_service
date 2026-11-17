@@ -1,5 +1,7 @@
 package co.edu.uptc.users_service.security;
 
+import co.edu.uptc.users_service.exception.ApiErrorResponse;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -32,10 +34,12 @@ public class GatewayIdentityFilter extends OncePerRequestFilter {
 
     private final byte[] gatewaySecretDigest;
     private final byte[] internalTokenDigest;
+    private final ObjectMapper objectMapper;
 
     public GatewayIdentityFilter(
             @Value("${security.gateway-secret:}") String gatewaySecret,
-            @Value("${internal.api-token:}") String internalToken) {
+            @Value("${internal.api-token:}") String internalToken,
+            ObjectMapper objectMapper) {
         if (gatewaySecret == null || gatewaySecret.isBlank()) {
             throw new IllegalStateException("GATEWAY_SECRET debe estar configurado");
         }
@@ -44,6 +48,7 @@ public class GatewayIdentityFilter extends OncePerRequestFilter {
         }
         this.gatewaySecretDigest = digest(gatewaySecret);
         this.internalTokenDigest = digest(internalToken);
+        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -138,6 +143,7 @@ public class GatewayIdentityFilter extends OncePerRequestFilter {
 
     private void reject(HttpServletResponse response) throws IOException {
         SecurityContextHolder.clearContext();
-        response.sendError(HttpServletResponse.SC_FORBIDDEN);
+        ApiErrorResponse.write(response, objectMapper, org.springframework.http.HttpStatus.FORBIDDEN,
+                "Identidad o credencial del Gateway inválida");
     }
 }

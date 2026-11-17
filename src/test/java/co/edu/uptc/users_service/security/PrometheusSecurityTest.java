@@ -31,13 +31,15 @@ class PrometheusSecurityTest {
     @Test
     void metricsRequireBasicAuthentication() throws Exception {
         mockMvc.perform(get("/prometheus"))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().json("{\"status\":401,\"error\":\"UNAUTHENTICATED\",\"message\":\"Autenticación requerida\"}"));
     }
 
     @Test
     void metricsRejectIncorrectBasicAuthentication() throws Exception {
         mockMvc.perform(get("/prometheus").with(httpBasic("metrics", "wrong-password")))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().json("{\"status\":401,\"error\":\"UNAUTHENTICATED\",\"message\":\"Autenticación requerida\"}"));
     }
 
     @Test
@@ -54,7 +56,8 @@ class PrometheusSecurityTest {
                         .header("X-Gateway-Secret", "test-gateway-secret")
                         .header("X-User-Id", "test-user")
                         .header("X-Roles", "USER"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isForbidden())
+                .andExpect(content().json("{\"status\":403,\"error\":\"FORBIDDEN\",\"message\":\"Identidad o credencial del Gateway inválida\"}"));
     }
 
     @Test
