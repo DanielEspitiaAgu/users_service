@@ -54,6 +54,13 @@ public class StatsUseCaseImpl implements StatsUseCase {
 
     @Override
     @Transactional(readOnly = true)
+    public List<String> getSolvedCaseIds(String externalId) {
+        StatsPlayer player = statsStore.getOrCreatePlayer(externalId);
+        return statsStore.findSolvedCaseIdsByUserId(player.id());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<AchievementDTO> getAchievements(String externalId) {
         StatsPlayer player = statsStore.getOrCreatePlayer(externalId);
         return statsStore.findUnlockedAchievements(player.id()).stream()

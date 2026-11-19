@@ -13,6 +13,8 @@ public interface StatsUseCase {
 
     ProgressionDTO getProgression(String externalId);
 
+    List<String> getSolvedCaseIds(String externalId);
+
     List<AchievementDTO> getAchievements(String externalId);
 
     ResultResponseDTO registerResult(String externalId, ResultDTO result);

@@ -55,4 +55,14 @@ class StatsUseCaseImplTest {
         verify(statsStore, never()).insertResultIfAbsent(eq(7L), any());
         verify(statsStore, never()).updatePlayerProgress(anyLong(), anyInt(), anyInt());
     }
+
+    @Test
+    void solvedCasesIncludeOnlyIdsReturnedByTheStatsStore() {
+        when(statsStore.getOrCreatePlayer("subject-1"))
+                .thenReturn(new StatsPlayer(7L, 200, 2));
+        when(statsStore.findSolvedCaseIdsByUserId(7L))
+                .thenReturn(List.of("case-a", "case-b"));
+
+        assertEquals(List.of("case-a", "case-b"), useCase.getSolvedCaseIds("subject-1"));
+    }
 }

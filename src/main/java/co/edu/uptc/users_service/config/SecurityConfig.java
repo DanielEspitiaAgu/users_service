@@ -84,6 +84,7 @@ public class SecurityConfig {
                         .permitAll()
                         .requestMatchers(HttpMethod.POST, "/users/*/results").hasRole("SERVICE")
                         .requestMatchers(HttpMethod.GET, "/users/*/progression").hasRole("SERVICE")
+                        .requestMatchers(HttpMethod.GET, "/users/*/solved-cases").hasRole("SERVICE")
                         .anyRequest().authenticated())
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .formLogin(AbstractHttpConfigurer::disable)

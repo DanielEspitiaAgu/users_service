@@ -77,6 +77,13 @@ public class UserController {
         return ResponseEntity.ok(statsUseCase.getProgression(id));
     }
 
+    @GetMapping("/{id}/solved-cases")
+    @Operation(summary = "Consultar casos resueltos para servicios internos")
+    @Parameter(name = "X-Internal-Token", in = ParameterIn.HEADER, required = true)
+    public ResponseEntity<List<String>> solvedCases(@PathVariable String id) {
+        return ResponseEntity.ok(statsUseCase.getSolvedCaseIds(id));
+    }
+
     @GetMapping("/me/achievements")
     @Operation(summary = "Ver logros desbloqueados")
     public ResponseEntity<List<AchievementDTO>> achievements(Authentication auth) {

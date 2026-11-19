@@ -23,6 +23,8 @@ public interface StatsStore {
 
     long countUniqueCasesSolvedByUserId(long userId);
 
+    List<String> findSolvedCaseIdsByUserId(long userId);
+
     long countWinsByUserId(long userId);
 
     Optional<LocalDateTime> findLastPlayDateByUserId(long userId);
