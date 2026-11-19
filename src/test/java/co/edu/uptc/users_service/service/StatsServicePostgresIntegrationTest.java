@@ -18,7 +18,9 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -127,6 +129,18 @@ class StatsServicePostgresIntegrationTest {
         assertFalse(repeated.firstWinRewarded());
         assertEquals(50, repeated.stats().experience());
         assertEquals(1, jdbcTemplate.queryForObject("SELECT count(*) FROM classic_case_rewards", Integer.class));
+    }
+
+    @Test
+    void solvedCaseIdsIncludeOnlyDistinctWinningCases() {
+        register(classic("solved-first", "case-solved", true, "EASY", 90));
+        register(classic("solved-repeat", "case-solved", true, "EASY", 95));
+        register(new ResultDTO("lost-match", "case-lost", "TIMED", false, 120, null, -10));
+        register(new ResultDTO("versus-win", "case-versus", "VERSUS", true, 80, null, 100));
+
+        assertEquals(
+                Set.of("case-solved", "case-versus"),
+                new HashSet<>(statsService.getSolvedCaseIds("integration-player")));
     }
 
     @Test
