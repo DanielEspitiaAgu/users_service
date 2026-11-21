@@ -64,6 +64,36 @@ class UserProfileHttpCharacterizationTest {
     }
 
     @Test
+    void publicDisplayNameIsRestrictedToInternalServicesAndExposesNoProfileFields() throws Exception {
+        when(getOrCreateProfile.getOrCreate("subject-existing"))
+                .thenReturn(profile("subject-existing", "Detective", "avatar.png"));
+        mockMvc.perform(get("/users/subject-existing/display-name")
+                        .header("X-Internal-Token", "test-internal-token"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.displayName").value("Detective"))
+                .andExpect(jsonPath("$.avatar").doesNotExist())
+                .andExpect(jsonPath("$.userId").doesNotExist());
+
+        mockMvc.perform(get("/users/subject-existing/display-name")
+                        .headers(gatewayHeaders("subject-existing", "USER")))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void publicDisplayNameUsesNeutralFallbackInsteadOfExposingUsernameWhenProfileNameIsBlank() throws Exception {
+        when(getOrCreateProfile.getOrCreate("subject-existing"))
+                .thenReturn(new PlayerProfile("subject-existing", "private-username", "private@example.test",
+                        "  ", "avatar.png", "es", false, 0, 0, null));
+        mockMvc.perform(get("/users/subject-existing/display-name")
+                        .header("X-Internal-Token", "test-internal-token"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.displayName").value("Detective"))
+                .andExpect(jsonPath("$.username").doesNotExist())
+                .andExpect(jsonPath("$.email").doesNotExist())
+                .andExpect(jsonPath("$.avatar").doesNotExist());
+    }
+
+    @Test
     void protectedProfileRouteRejectsMissingOrUntrustedGatewayIdentity() throws Exception {
         mockMvc.perform(get("/users/me"))
                 .andExpect(status().isForbidden())

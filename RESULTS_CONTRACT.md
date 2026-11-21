@@ -4,6 +4,11 @@
 existing `X-Internal-Token`. Godot must never call it. `externalId` comes from the
 internal route; it is not accepted in the JSON body.
 
+`GET /users/{externalId}/solved-cases` is also internal-only and requires the
+same token. It returns a JSON array of distinct case IDs for which that user has
+a persisted winning result in any mode. `partidas-service` uses this history to
+choose VERSUS cases that neither participant has already solved.
+
 ## Request
 
 Every new terminal result requires `matchId`, `caseId`, `mode`, `won`, and

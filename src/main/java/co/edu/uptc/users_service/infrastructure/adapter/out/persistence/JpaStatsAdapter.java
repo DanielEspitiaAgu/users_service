@@ -72,6 +72,11 @@ public class JpaStatsAdapter implements StatsStore {
     }
 
     @Override
+    public List<String> findSolvedCaseIdsByUserId(long userId) {
+        return userResultRepository.findSolvedCaseIdsByUserId(userId);
+    }
+
+    @Override
     public long countWinsByUserId(long userId) {
         return userResultRepository.countWinsByUserId(userId);
     }

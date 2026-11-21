@@ -77,6 +77,25 @@ public class UserController {
         return ResponseEntity.ok(statsUseCase.getProgression(id));
     }
 
+    @GetMapping("/{id}/solved-cases")
+    @Operation(summary = "Consultar casos resueltos para servicios internos")
+    @Parameter(name = "X-Internal-Token", in = ParameterIn.HEADER, required = true)
+    public ResponseEntity<List<String>> solvedCases(@PathVariable String id) {
+        return ResponseEntity.ok(statsUseCase.getSolvedCaseIds(id));
+    }
+
+    @GetMapping("/{id}/display-name")
+    @Operation(summary = "Consultar el nombre público de un jugador (uso interno)")
+    @Parameter(name = "X-Internal-Token", in = ParameterIn.HEADER, required = true)
+    public ResponseEntity<PublicPlayerDTO> displayName(@PathVariable String id) {
+        var profile = getOrCreateProfile.getOrCreate(id);
+        String displayName = profile.name();
+        if (displayName == null || displayName.isBlank()) {
+            displayName = "Detective";
+        }
+        return ResponseEntity.ok(new PublicPlayerDTO(displayName.strip()));
+    }
+
     @GetMapping("/me/achievements")
     @Operation(summary = "Ver logros desbloqueados")
     public ResponseEntity<List<AchievementDTO>> achievements(Authentication auth) {
