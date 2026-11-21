@@ -12,6 +12,8 @@ $oldDbUsername = $env:DB_USERNAME
 $oldDbPasswordApp = $env:DB_PASSWORD
 $oldGatewaySecret = $env:GATEWAY_SECRET
 $oldInternalToken = $env:INTERNAL_API_TOKEN
+$oldMetricsScrapeUsername = $env:METRICS_SCRAPE_USERNAME
+$oldMetricsScrapePassword = $env:METRICS_SCRAPE_PASSWORD
 $oldEurekaEnabled = $env:EUREKA_CLIENT_ENABLED
 $oldEurekaRegister = $env:EUREKA_CLIENT_REGISTER_WITH_EUREKA
 $oldEurekaFetch = $env:EUREKA_CLIENT_FETCH_REGISTRY
@@ -59,7 +61,7 @@ try {
         if ($LASTEXITCODE -eq 0 -and $portMapping) {
             $containerPort = [int](($portMapping | Select-Object -First 1) -split ':')[-1]
         }
-        $ready = & docker exec $containerName pg_isready -U postgres -d migration_test 2>$null
+        $ready = & docker exec $containerName pg_isready -h 127.0.0.1 -U postgres -d migration_test 2>$null
         if ($LASTEXITCODE -eq 0 -and $containerPort) {
             break
         }
@@ -70,7 +72,7 @@ try {
     }
 
     $instanceMarker = [guid]::NewGuid().ToString('N')
-    & docker exec $containerName psql -U postgres -d migration_test -c `
+    & docker exec $containerName psql -h 127.0.0.1 -U postgres -d migration_test -c `
         "COMMENT ON DATABASE migration_test IS '$instanceMarker'" | Out-Null
     if ($LASTEXITCODE -ne 0) {
         throw 'Could not mark the disposable PostgreSQL database for test isolation.'
@@ -87,6 +89,8 @@ try {
     $env:DB_PASSWORD = ''
     $env:GATEWAY_SECRET = $env:MIGRATION_TEST_GATEWAY_SECRET
     $env:INTERNAL_API_TOKEN = $env:MIGRATION_TEST_INTERNAL_TOKEN
+    $env:METRICS_SCRAPE_USERNAME = 'migration-test-metrics'
+    $env:METRICS_SCRAPE_PASSWORD = [guid]::NewGuid().ToString('N')
     $env:EUREKA_CLIENT_ENABLED = 'false'
     $env:EUREKA_CLIENT_REGISTER_WITH_EUREKA = 'false'
     $env:EUREKA_CLIENT_FETCH_REGISTRY = 'false'
@@ -118,6 +122,8 @@ try {
     $env:DB_PASSWORD = $oldDbPasswordApp
     $env:GATEWAY_SECRET = $oldGatewaySecret
     $env:INTERNAL_API_TOKEN = $oldInternalToken
+    $env:METRICS_SCRAPE_USERNAME = $oldMetricsScrapeUsername
+    $env:METRICS_SCRAPE_PASSWORD = $oldMetricsScrapePassword
     $env:EUREKA_CLIENT_ENABLED = $oldEurekaEnabled
     $env:EUREKA_CLIENT_REGISTER_WITH_EUREKA = $oldEurekaRegister
     $env:EUREKA_CLIENT_FETCH_REGISTRY = $oldEurekaFetch

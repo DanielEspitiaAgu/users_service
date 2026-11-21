@@ -15,9 +15,11 @@ import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.List;
 import java.util.Properties;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -89,6 +91,150 @@ class FreshDatabaseFlywayProfilePostgresTest {
         }
     }
 
+    @Test
+    void refusesMigratedSchemaWhenClassicRewardsTableWasRemoved() throws Exception {
+        assertTamperedSchemaRejected(
+                "fresh_missing_rewards_",
+                schema -> execute(testUrl(), testUser(), testPassword(),
+                        "DROP TABLE \"" + schema + "\".classic_case_rewards"),
+                schema -> assertFalse(tableExists(testUrl(), testUser(), testPassword(), schema,
+                        "classic_case_rewards")));
+    }
+
+    @Test
+    void refusesMigratedSchemaWhenCriticalRewardColumnWasRemoved() throws Exception {
+        assertTamperedSchemaRejected(
+                "fresh_missing_reward_column_",
+                schema -> execute(testUrl(), testUser(), testPassword(),
+                        "ALTER TABLE \"" + schema + "\".classic_case_rewards DROP COLUMN xp_awarded CASCADE"),
+                schema -> assertFalse(columnExists(testUrl(), testUser(), testPassword(), schema,
+                        "classic_case_rewards", "xp_awarded")));
+    }
+
+    @Test
+    void refusesMigratedSchemaWhenCriticalRewardColumnTypeChanged() throws Exception {
+        assertTamperedSchemaRejected(
+                "fresh_changed_reward_type_",
+                schema -> execute(testUrl(), testUser(), testPassword(),
+                        "ALTER TABLE \"" + schema + "\".classic_case_rewards "
+                                + "ALTER COLUMN xp_awarded TYPE bigint"),
+                schema -> assertEquals("bigint", columnType(testUrl(), testUser(), testPassword(), schema,
+                        "classic_case_rewards", "xp_awarded")));
+    }
+
+    @Test
+    void refusesMigratedSchemaWhenRewardUniquenessWasRemoved() throws Exception {
+        assertTamperedSchemaRejected(
+                "fresh_missing_reward_key_",
+                schema -> execute(testUrl(), testUser(), testPassword(),
+                        "ALTER TABLE \"" + schema + "\".classic_case_rewards "
+                                + "DROP CONSTRAINT pk_classic_case_rewards"),
+                schema -> assertFalse(uniqueConstraintExists(testUrl(), testUser(), testPassword(), schema,
+                        "classic_case_rewards", Set.of("user_id", "case_id", "mode"))));
+    }
+
+    @Test
+    void refusesMigratedSchemaWhenMatchIdempotencyConstraintWasRemoved() throws Exception {
+        assertTamperedSchemaRejected(
+                "fresh_missing_match_key_",
+                schema -> execute(testUrl(), testUser(), testPassword(),
+                        "ALTER TABLE \"" + schema + "\".user_results "
+                                + "DROP CONSTRAINT uq_user_results_user_match"),
+                schema -> assertFalse(uniqueConstraintExists(testUrl(), testUser(), testPassword(), schema,
+                        "user_results", Set.of("user_id", "match_id"))));
+    }
+
+    @Test
+    void refusesMigratedSchemaWhenRewardForeignKeyWasRemoved() throws Exception {
+        assertTamperedSchemaRejected(
+                "fresh_missing_reward_fk_",
+                schema -> execute(testUrl(), testUser(), testPassword(),
+                        "ALTER TABLE \"" + schema + "\".classic_case_rewards "
+                                + "DROP CONSTRAINT fk_classic_case_rewards_user"),
+                schema -> assertFalse(constraintExists(testUrl(), testUser(), testPassword(), schema,
+                        "fk_classic_case_rewards_user")));
+    }
+
+    @Test
+    void refusesMigratedSchemaWhenXpCheckWasRemoved() throws Exception {
+        assertTamperedSchemaRejected(
+                "fresh_missing_xp_check_",
+                schema -> execute(testUrl(), testUser(), testPassword(),
+                        "ALTER TABLE \"" + schema + "\".classic_case_rewards "
+                                + "DROP CONSTRAINT ck_classic_case_rewards_xp"),
+                schema -> assertFalse(constraintExists(testUrl(), testUser(), testPassword(), schema,
+                        "ck_classic_case_rewards_xp")));
+    }
+
+    @Test
+    void refusesPartiallyMigratedHistoryWithoutApplyingPendingMigrations() throws Exception {
+        String url = testUrl();
+        String user = testUser();
+        String password = testPassword();
+        String schema = createSchema(url, user, password, "fresh_partial_history_");
+        try {
+            Flyway.configure()
+                    .dataSource(url + "?currentSchema=" + schema, user, password)
+                    .schemas(schema)
+                    .defaultSchema(schema)
+                    .locations("classpath:db/migration")
+                    .target("1")
+                    .load()
+                    .migrate();
+
+            RuntimeException failure = assertThrows(RuntimeException.class,
+                    () -> verifyApplicationStartup(startupArguments(
+                            url + "?currentSchema=" + schema, schema, user, password)));
+            assertTrue(rootCauseMessage(failure).contains("history is partial"), rootCauseMessage(failure));
+            assertEquals(1, scalar(url, user, password,
+                    "SELECT count(*) FROM \"" + schema + "\".flyway_schema_history WHERE success"));
+            assertFalse(tableExists(url, user, password, schema, "classic_case_rewards"));
+        } finally {
+            execute(url, user, password, "DROP SCHEMA IF EXISTS \"" + schema + "\" CASCADE");
+        }
+    }
+
+    private static void assertTamperedSchemaRejected(String prefix, SchemaMutation mutation,
+            SchemaAssertion assertion) throws Exception {
+        String url = testUrl();
+        String user = testUser();
+        String password = testPassword();
+        String schema = createSchema(url, user, password, prefix);
+        try {
+            Flyway flyway = configuredFlyway(url + "?currentSchema=" + schema, schema, user, password);
+            flyway.migrate();
+            mutation.apply(schema);
+
+            RuntimeException failure = assertThrows(RuntimeException.class,
+                    () -> verifyApplicationStartup(startupArguments(
+                            url + "?currentSchema=" + schema, schema, user, password)));
+            assertTrue(rootCauseMessage(failure).contains("required PostgreSQL object"),
+                    rootCauseMessage(failure));
+            assertion.verify(schema);
+            assertEquals(3, scalar(url, user, password,
+                    "SELECT count(*) FROM \"" + schema + "\".flyway_schema_history WHERE success"));
+        } finally {
+            execute(url, user, password, "DROP SCHEMA IF EXISTS \"" + schema + "\" CASCADE");
+        }
+    }
+
+    private static Flyway configuredFlyway(String url, String schema, String user, String password) {
+        return Flyway.configure()
+                .dataSource(url, user, password)
+                .schemas(schema)
+                .defaultSchema(schema)
+                .locations("classpath:db/migration")
+                .load();
+    }
+
+    private static String rootCauseMessage(Throwable error) {
+        Throwable root = error;
+        while (root.getCause() != null) {
+            root = root.getCause();
+        }
+        return root.getMessage() == null ? "" : root.getMessage();
+    }
+
     private static void verifyApplicationStartup(String[] args) {
         try (ConfigurableApplicationContext context = new SpringApplicationBuilder(UsersServiceApplication.class)
                 .profiles("flyway-fresh")
@@ -134,6 +280,97 @@ class FreshDatabaseFlywayProfilePostgresTest {
                         new String[] { "TABLE" })) {
             return result.next();
         }
+    }
+
+    private static boolean columnExists(
+            String url, String user, String password, String schema, String table, String column) throws Exception {
+        try (Connection connection = DriverManager.getConnection(url, user, password);
+                var statement = connection.prepareStatement("SELECT 1 FROM information_schema.columns "
+                        + "WHERE table_schema = ? AND table_name = ? AND column_name = ?")) {
+            statement.setString(1, schema);
+            statement.setString(2, table);
+            statement.setString(3, column);
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next();
+            }
+        }
+    }
+
+    private static String columnType(
+            String url, String user, String password, String schema, String table, String column) throws Exception {
+        try (Connection connection = DriverManager.getConnection(url, user, password);
+                var statement = connection.prepareStatement("SELECT data_type FROM information_schema.columns "
+                        + "WHERE table_schema = ? AND table_name = ? AND column_name = ?")) {
+            statement.setString(1, schema);
+            statement.setString(2, table);
+            statement.setString(3, column);
+            try (ResultSet result = statement.executeQuery()) {
+                assertTrue(result.next());
+                return result.getString(1);
+            }
+        }
+    }
+
+    private static boolean uniqueConstraintExists(
+            String url, String user, String password, String schema, String table, Set<String> expectedColumns)
+            throws Exception {
+        String sql = "SELECT c.conname, a.attname FROM pg_catalog.pg_constraint c "
+                + "JOIN pg_catalog.pg_class t ON t.oid = c.conrelid "
+                + "JOIN pg_catalog.pg_namespace n ON n.oid = t.relnamespace "
+                + "JOIN LATERAL unnest(c.conkey) k(attnum) ON true "
+                + "JOIN pg_catalog.pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum "
+                + "WHERE n.nspname = ? AND t.relname = ? AND c.contype IN ('p', 'u')";
+        try (Connection connection = DriverManager.getConnection(url, user, password);
+                var statement = connection.prepareStatement(sql)) {
+            statement.setString(1, schema);
+            statement.setString(2, table);
+            java.util.Map<String, java.util.Set<String>> columns = new java.util.HashMap<>();
+            try (ResultSet result = statement.executeQuery()) {
+                while (result.next()) {
+                    columns.computeIfAbsent(result.getString("conname"), ignored -> new java.util.HashSet<>())
+                            .add(result.getString("attname"));
+                }
+            }
+            return columns.values().stream().anyMatch(expectedColumns::equals);
+        }
+    }
+
+    private static boolean constraintExists(
+            String url, String user, String password, String schema, String constraint) throws Exception {
+        try (Connection connection = DriverManager.getConnection(url, user, password);
+                var statement = connection.prepareStatement("SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_constraint c "
+                        + "JOIN pg_catalog.pg_class t ON t.oid = c.conrelid "
+                        + "JOIN pg_catalog.pg_namespace n ON n.oid = t.relnamespace "
+                        + "WHERE n.nspname = ? AND c.conname = ?)")) {
+            statement.setString(1, schema);
+            statement.setString(2, constraint);
+            try (ResultSet result = statement.executeQuery()) {
+                assertTrue(result.next());
+                return result.getBoolean(1);
+            }
+        }
+    }
+
+    private static String testUrl() {
+        return requiredEnv("MIGRATION_TEST_JDBC_URL");
+    }
+
+    private static String testUser() {
+        return System.getenv().getOrDefault("MIGRATION_TEST_DB_USER", "postgres");
+    }
+
+    private static String testPassword() {
+        return System.getenv().getOrDefault("MIGRATION_TEST_DB_PASSWORD", "");
+    }
+
+    @FunctionalInterface
+    private interface SchemaMutation {
+        void apply(String schema) throws Exception;
+    }
+
+    @FunctionalInterface
+    private interface SchemaAssertion {
+        void verify(String schema) throws Exception;
     }
 
     private static int scalar(String url, String user, String password, String sql) throws Exception {
