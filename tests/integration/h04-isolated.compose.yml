@@ -1,0 +1,63 @@
+services:
+  kafka:
+    image: apache/kafka:4.4.0
+    hostname: kafka
+    labels:
+      com.deathdoku.test: h04-real-saga
+      com.deathdoku.test.owner: codex-h04-01
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_LISTENERS: INTERNAL://:9092,CONTROLLER://:9093,EXTERNAL://:29092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:${KAFKA_HOST_PORT}
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      CLUSTER_ID: 4L6g3nShT-eMCtK--X86sw
+    ports:
+      - "127.0.0.1:${KAFKA_HOST_PORT}:29092"
+    healthcheck:
+      test: ["CMD", "/opt/kafka/bin/kafka-broker-api-versions.sh", "--bootstrap-server", "localhost:9092"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+
+  postgres:
+    image: postgres:16.15-alpine
+    labels:
+      com.deathdoku.test: h04-real-saga
+      com.deathdoku.test.owner: codex-h04-01
+    environment:
+      POSTGRES_DB: h04_users_saga
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${H04_POSTGRES_PASSWORD}
+    ports:
+      - "127.0.0.1::5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d h04_users_saga"]
+      interval: 3s
+      timeout: 5s
+      retries: 90
+      start_period: 5s
+
+  redis:
+    image: redis:7-alpine
+    labels:
+      com.deathdoku.test: h04-real-saga
+      com.deathdoku.test.owner: codex-h04-01
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "127.0.0.1::6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 30

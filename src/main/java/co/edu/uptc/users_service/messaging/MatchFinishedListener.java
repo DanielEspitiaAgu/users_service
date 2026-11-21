@@ -6,11 +6,12 @@ import co.edu.uptc.users_service.dto.ResultResponseDTO;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.kafka.annotation.KafkaListener;
-import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import io.micrometer.core.instrument.MeterRegistry;
 
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -23,13 +24,13 @@ public class MatchFinishedListener {
 
     private final StatsUseCase statsUseCase;
     private final ObjectMapper objectMapper;
-    private final KafkaTemplate<String, String> kafkaTemplate;
+    private final MatchSagaOutboxStore outbox;
     private final MeterRegistry meterRegistry;
 
     @KafkaListener(
             topics = "${events.match-finished-topic:matches.finished.v1}",
             groupId = "${events.users-group:usuarios-match-results}")
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void onMatchFinished(String rawEvent) throws Exception {
         MatchFinishedEvent event = objectMapper.readValue(rawEvent, MatchFinishedEvent.class);
         validate(event);
@@ -55,13 +56,25 @@ public class MatchFinishedListener {
                 event.correlationId(),
                 Instant.now().toString(),
                 new MatchSagaOutcome.Payload(event.payload().matchId(), "CONFIRMED", applied));
-        kafkaTemplate.send(OUTCOME_TOPIC, event.payload().matchId(),
-                objectMapper.writeValueAsString(outcome)).get();
+        outbox.enqueue(event.eventId(), fingerprint(event), event.payload().matchId(),
+                event.correlationId(), outcome.eventId(), objectMapper.writeValueAsString(outcome));
         meterRegistry.counter("match_finished_processed",
                 "application", "usuarios-service",
                 "mode", event.payload().mode()).increment();
         System.out.printf("MatchFinished procesado eventId=%s correlationId=%s matchId=%s jugadores=%d%n",
                 event.eventId(), event.correlationId(), event.payload().matchId(), applied.size());
+    }
+
+    private String fingerprint(MatchFinishedEvent event) {
+        try {
+            byte[] canonicalEvent = objectMapper.writeValueAsBytes(event);
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(canonicalEvent);
+            return java.util.HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException error) {
+            throw new IllegalStateException("SHA-256 is unavailable", error);
+        } catch (Exception error) {
+            throw new IllegalStateException("Could not fingerprint MatchFinished event", error);
+        }
     }
 
     private static void validate(MatchFinishedEvent event) {
