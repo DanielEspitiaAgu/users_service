@@ -29,14 +29,57 @@ class FreshDatabaseFlywayProfilePostgresTest {
     private static final String CONFIRMATION = "INITIALIZE_FRESH_DATABASE:" + DATABASE;
 
     @Test
-    void normalConfigurationDoesNotEnableFlyway() throws Exception {
+    void normalConfigurationEnablesSafeLegacyBaselineMigrations() throws Exception {
         Properties properties = new Properties();
         try (var input = getClass().getClassLoader().getResourceAsStream("application.properties")) {
             assertTrue(input != null);
             properties.load(input);
         }
-        assertEquals("false", properties.getProperty("spring.flyway.enabled"));
+        assertEquals("true", properties.getProperty("spring.flyway.enabled"));
+        assertEquals("true", properties.getProperty("spring.flyway.baseline-on-migrate"));
+        assertEquals("3", properties.getProperty("spring.flyway.baseline-version"));
+        assertEquals("true", properties.getProperty("spring.flyway.clean-disabled"));
         assertEquals("${JPA_DDL_AUTO:update}", properties.getProperty("spring.jpa.hibernate.ddl-auto"));
+    }
+
+    @Test
+    void existingHibernateSchemaIsPreservedAndReceivesOnlyAdditiveOutboxMigration() throws Exception {
+        String baseUrl = requiredEnv("MIGRATION_TEST_JDBC_URL");
+        String dbUser = System.getenv().getOrDefault("MIGRATION_TEST_DB_USER", "postgres");
+        String dbPassword = System.getenv().getOrDefault("MIGRATION_TEST_DB_PASSWORD", "");
+        String schema = createSchema(baseUrl, dbUser, dbPassword, "legacy_baseline_");
+        execute(baseUrl, dbUser, dbPassword,
+                "CREATE TABLE \"" + schema + "\".users (id bigint PRIMARY KEY, username varchar(50))");
+        execute(baseUrl, dbUser, dbPassword,
+                "INSERT INTO \"" + schema + "\".users (id, username) VALUES (42, 'existing-user')");
+
+        try {
+            var dataSource = new DriverManagerDataSource(baseUrl + "?currentSchema=" + schema, dbUser, dbPassword);
+            Flyway flyway = Flyway.configure()
+                    .dataSource(dataSource)
+                    .schemas(schema)
+                    .defaultSchema(schema)
+                    .locations("classpath:db/migration")
+                    .baselineOnMigrate(true)
+                    .baselineVersion("3")
+                    .cleanDisabled(true)
+                    .load();
+
+            flyway.migrate();
+
+            assertEquals("existing-user", scalarString(baseUrl, dbUser, dbPassword,
+                    "SELECT username FROM \"" + schema + "\".users WHERE id = 42"));
+            assertTrue(tableExists(baseUrl, dbUser, dbPassword, schema, "match_saga_outbox"));
+            assertEquals(1, scalar(baseUrl, dbUser, dbPassword,
+                    "SELECT count(*) FROM \"" + schema + "\".flyway_schema_history "
+                            + "WHERE version = '3' AND type = 'BASELINE' AND success"));
+            assertEquals(1, scalar(baseUrl, dbUser, dbPassword,
+                    "SELECT count(*) FROM \"" + schema + "\".flyway_schema_history "
+                            + "WHERE version = '4' AND success"));
+            assertFalse(tableExists(baseUrl, dbUser, dbPassword, schema, "classic_case_rewards"));
+        } finally {
+            execute(baseUrl, dbUser, dbPassword, "DROP SCHEMA IF EXISTS \"" + schema + "\" CASCADE");
+        }
     }
 
     @Test
@@ -407,6 +450,15 @@ class FreshDatabaseFlywayProfilePostgresTest {
                 ResultSet result = statement.executeQuery(sql)) {
             assertTrue(result.next());
             return result.getInt(1);
+        }
+    }
+
+    private static String scalarString(String url, String user, String password, String sql) throws Exception {
+        try (Connection connection = DriverManager.getConnection(url, user, password);
+                Statement statement = connection.createStatement();
+                ResultSet result = statement.executeQuery(sql)) {
+            assertTrue(result.next());
+            return result.getString(1);
         }
     }
 
