@@ -7,12 +7,13 @@ four base tables from the supplied PostgreSQL snapshot and current JPA mappings.
 `V2__idempotent_classic_rewards.sql` adds nullable
 `user_results.match_id`, `first_win_rewarded`, the `(user_id, match_id)` unique
 constraint, and `classic_case_rewards`. V3 adds nullable `difficulty` so
-idempotent replays can compare that trusted input with the first request.
+idempotent replays can compare that trusted input with the first request. V4
+adds `match_saga_outbox` to persist confirmation payloads in the same PostgreSQL
+transaction as match results and rewards.
 
 Flyway remains disabled in `application.properties`. `ddl-auto=update` is also
-unchanged. The previously prepared V1/V2 migrations were reported passing against
-isolated PostgreSQL 16.15. V3 and the M6.1-B3 transaction flow still require
-verification by the runner below. None of these instructions migrate `usuariosdb`.
+unchanged. V1-V4 and the result/outbox transaction flow have passed the isolated
+PostgreSQL 16.15 runner. None of these instructions migrate `usuariosdb`.
 
 The supplied snapshot explicitly confirms `external_id` uniqueness. JPA also
 declares unique nullable `username` and `email`; V1 reflects those declarations.
@@ -40,7 +41,7 @@ Do not enable `baseline-on-migrate` globally. For each existing environment,
 before any application rollout:
 
 1. Take a database backup and capture a schema-only dump.
-2. Confirm the target database and compare all four tables, column types,
+2. Confirm the target database and compare the legacy tables and all column types,
    nullability, identity definitions, foreign keys, unique constraints, and
    indexes with V1. Resolve differences first. A baseline records a version; it
    does not prove that the schema matches the migration.
@@ -56,18 +57,26 @@ before any application rollout:
 
    Supply `FLYWAY_URL`, `FLYWAY_USER`, and `FLYWAY_PASSWORD` through the protected
    runner environment; do not put credentials on the command line or in this repo.
-4. Apply V2 and verify the Flyway history and data counts before routing writes
-   back to the service. V3 is also applied by the new-result service version.
+4. Apply V2/V3/V4 and verify the Flyway history, outbox structure, and data
+   counts before routing writes back to the service.
 
-For a new empty database, run V1 through V3. For an existing database,
-baseline it at version 1 and run V2/V3. Keep the current runtime setting
+For a new empty database, run V1 through V4. For an existing database, baseline
+only after inventory confirms V1 compatibility, then apply V2/V3/V4 using the
+controlled migration runner. V4 adds an independent table and does not rewrite
+result history. Inspect `match_saga_outbox` constraints and its pending index
+after migration. Do not run the `flyway-fresh` profile against an existing
+installation: its guard intentionally rejects existing schemas at V1-V3 rather
+than applying a pending migration at service startup. Use a reviewed maintenance
+window, a verified backup and a migration tool explicitly pointed to the
+approved database. Do not run that procedure against a shared database as part
+of this task. Keep the current runtime setting
 `spring.flyway.enabled=false` until a separately approved rollout. Do not rely on
 Hibernate `update` and Flyway as permanent competing schema managers; a future
 cutover should switch to validation only after schema parity has been proved.
 
 The integration test exercises both paths. Its existing-schema path creates the
 V1-compatible schema, removes only the test schema's Flyway history, seeds the
-confirmed historical mode distribution, then baselines at V1 and applies V2/V3.
+confirmed historical mode distribution, then baselines at V1 and applies V2/V3/V4.
 This is a disposable compatibility fixture, not a live `usuariosdb` inspection.
 
 ## Isolated PostgreSQL migration tests
@@ -90,14 +99,21 @@ It marks the disposable database with a one-run random comment marker. The test
 rejects URLs outside loopback, a database other than `migration_test`, or a
 database without that marker.
 
-The tests cover V1 through V3 on a new schema, explicit baseline then V2/V3 on a
+The tests cover V1 through V4 on a new schema, explicit baseline then V2/V3/V4 on a
 compatible existing schema, unique-key enforcement, preservation of the 19
 historical rows and the exact `TIMED`, `VERSUS`, and `timed` distribution, and
 recovery after an intentionally failing transactional migration. The service
 tests cover the XP outcomes, idempotency, lock contention, distinct-case counts,
 and transaction rollback using PostgreSQL. The failure
 fixture first adds a column and then fails; the test checks PostgreSQL rolled the
-column back and that valid V2/V3 can subsequently run.
+column back and that valid V2/V3/V4 can subsequently run.
+
+The saga tests additionally verify result/reward/outbox rollback as one unit,
+duplicate delivery idempotence, outbox lease exclusion, and schema validation.
+The scheduled publisher retries unacknowledged events with capped exponential
+backoff; operational dashboards should monitor `match_saga_outbox_pending`,
+`match_saga_outbox_publish_failures`, and the `last_error` / `attempts` columns
+for rows that remain pending.
 
 If Docker is unavailable, no migration result should be reported as verified.
 The test class fails clearly when no `MIGRATION_TEST_JDBC_URL` is supplied; use
@@ -108,11 +124,12 @@ the script above to ensure it connects only to the intended disposable database.
 - Capture and review the physical schema from every existing environment.
 - Confirm all environments match V1 and that the historical rows/modes agree with
   the approved inventory.
-- Validate V2/V3 against a restored database copy and review counts before and
+- Validate V2/V3/V4 against a restored database copy and review counts before and
   after.
 - Choose a controlled per-environment baseline and rollout procedure.
 - Approve the Flyway enablement and the later transition away from
   `ddl-auto=update` separately.
 
-No Kafka integration, classic-match creation, or classic-match finalization is
-implemented here. See `RESULTS_CONTRACT.md` for the caller boundary and rollout.
+No Kafka broker integration test, classic-match creation, or classic-match
+finalization is implemented here. See `RESULTS_CONTRACT.md` for the caller
+boundary and rollout.

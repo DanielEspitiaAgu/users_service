@@ -25,7 +25,7 @@ import org.flywaydb.core.api.MigrationState;
 public final class FreshDatabaseMigrationGuard {
 
     private static final String CONFIRMATION_PREFIX = "INITIALIZE_FRESH_DATABASE:";
-    private static final Set<String> EXPECTED_VERSIONS = Set.of("1", "2", "3");
+    private static final Set<String> EXPECTED_VERSIONS = Set.of("1", "2", "3", "4");
     private static final List<ColumnRequirement> REQUIRED_COLUMNS = List.of(
             new ColumnRequirement("users", "id", "bigint", null, false),
             new ColumnRequirement("users", "experience", "integer", null, false),
@@ -45,7 +45,23 @@ public final class FreshDatabaseMigrationGuard {
             new ColumnRequirement("classic_case_rewards", "mode", "character varying", 20, false),
             new ColumnRequirement("classic_case_rewards", "first_result_id", "bigint", null, false),
             new ColumnRequirement("classic_case_rewards", "xp_awarded", "integer", null, false),
-            new ColumnRequirement("classic_case_rewards", "created_at", "timestamp without time zone", null, false));
+            new ColumnRequirement("classic_case_rewards", "created_at", "timestamp without time zone", null, false),
+            new ColumnRequirement("match_saga_outbox", "id", "bigint", null, false),
+            new ColumnRequirement("match_saga_outbox", "event_id", "character varying", 255, false),
+            new ColumnRequirement("match_saga_outbox", "source_event_id", "character varying", 255, false),
+            new ColumnRequirement("match_saga_outbox", "source_fingerprint", "character", 64, false),
+            new ColumnRequirement("match_saga_outbox", "match_id", "character varying", 255, false),
+            new ColumnRequirement("match_saga_outbox", "correlation_id", "character varying", 255, false),
+            new ColumnRequirement("match_saga_outbox", "payload", "text", null, false),
+            new ColumnRequirement("match_saga_outbox", "status", "character varying", 16, false),
+            new ColumnRequirement("match_saga_outbox", "attempts", "integer", null, false),
+            new ColumnRequirement("match_saga_outbox", "next_attempt_at", "timestamp with time zone", null, false),
+            new ColumnRequirement("match_saga_outbox", "claimed_until", "timestamp with time zone", null, true),
+            new ColumnRequirement("match_saga_outbox", "claim_token", "uuid", null, true),
+            new ColumnRequirement("match_saga_outbox", "last_error", "character varying", 255, true),
+            new ColumnRequirement("match_saga_outbox", "created_at", "timestamp with time zone", null, false),
+            new ColumnRequirement("match_saga_outbox", "updated_at", "timestamp with time zone", null, false),
+            new ColumnRequirement("match_saga_outbox", "published_at", "timestamp with time zone", null, true));
 
     private FreshDatabaseMigrationGuard() {
     }
@@ -138,7 +154,7 @@ public final class FreshDatabaseMigrationGuard {
                 .allMatch(info -> info.getState() == MigrationState.SUCCESS);
         if (!allSuccessful || !EXPECTED_VERSIONS.equals(appliedVersions) || flyway.info().pending().length != 0) {
             throw new IllegalStateException(
-                    "Refusing Flyway startup: existing schema history is partial or differs from V1-V3");
+                    "Refusing Flyway startup: existing schema history is partial or differs from V1-V4");
         }
         flyway.validate();
     }
@@ -147,6 +163,7 @@ public final class FreshDatabaseMigrationGuard {
         requireTable(connection, schema, "users");
         requireTable(connection, schema, "user_results");
         requireTable(connection, schema, "classic_case_rewards");
+        requireTable(connection, schema, "match_saga_outbox");
         for (ColumnRequirement column : REQUIRED_COLUMNS) {
             requireColumn(connection, schema, column);
         }
@@ -155,6 +172,9 @@ public final class FreshDatabaseMigrationGuard {
         requireUniqueKey(connection, schema, "user_results", Set.of("user_id", "match_id"), false);
         requireUniqueKey(connection, schema, "classic_case_rewards", Set.of("user_id", "case_id", "mode"), true);
         requireUniqueKey(connection, schema, "classic_case_rewards", Set.of("first_result_id"), false);
+        requireUniqueKey(connection, schema, "match_saga_outbox", Set.of("id"), true);
+        requireUniqueKey(connection, schema, "match_saga_outbox", Set.of("event_id"), false);
+        requireUniqueKey(connection, schema, "match_saga_outbox", Set.of("source_event_id"), false);
 
         requireForeignKey(connection, schema, "user_results", Set.of("user_id"), "users", Set.of("id"));
         requireForeignKey(connection, schema, "classic_case_rewards", Set.of("user_id"), "users", Set.of("id"));
@@ -171,6 +191,14 @@ public final class FreshDatabaseMigrationGuard {
                 "match_id", "btrim");
         requireCheck(connection, schema, "user_results", "ck_user_results_difficulty",
                 "difficulty", "easy", "medium", "hard");
+        requireCheck(connection, schema, "match_saga_outbox", "ck_match_saga_outbox_status",
+                "status", "pending", "published");
+        requireCheck(connection, schema, "match_saga_outbox", "ck_match_saga_outbox_attempts",
+                "attempts", ">=", "0");
+        requireCheck(connection, schema, "match_saga_outbox", "ck_match_saga_outbox_claim",
+                "claimed_until", "claim_token");
+        requireCheck(connection, schema, "match_saga_outbox", "ck_match_saga_outbox_published",
+                "status", "pending", "published_at", "is null", "published", "is not null");
     }
 
     private static void requireTable(Connection connection, String schema, String table) throws SQLException {

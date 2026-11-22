@@ -51,7 +51,7 @@ class FreshDatabaseFlywayProfilePostgresTest {
         try {
             verifyApplicationStartup(args);
             verifyApplicationStartup(args);
-            assertEquals(3, scalar(baseUrl, dbUser, dbPassword,
+            assertEquals(4, scalar(baseUrl, dbUser, dbPassword,
                     "SELECT count(*) FROM \"" + schema + "\".flyway_schema_history WHERE success"));
             assertTrue(tableExists(baseUrl, dbUser, dbPassword, schema, "classic_case_rewards"));
         } finally {
@@ -194,6 +194,34 @@ class FreshDatabaseFlywayProfilePostgresTest {
         }
     }
 
+    @Test
+    void refusesPreOutboxV1ToV3HistoryWithoutApplyingV4() throws Exception {
+        String url = testUrl();
+        String user = testUser();
+        String password = testPassword();
+        String schema = createSchema(url, user, password, "fresh_pre_outbox_");
+        try {
+            Flyway.configure()
+                    .dataSource(url + "?currentSchema=" + schema, user, password)
+                    .schemas(schema)
+                    .defaultSchema(schema)
+                    .locations("classpath:db/migration")
+                    .target("3")
+                    .load()
+                    .migrate();
+
+            RuntimeException failure = assertThrows(RuntimeException.class,
+                    () -> verifyApplicationStartup(startupArguments(
+                            url + "?currentSchema=" + schema, schema, user, password)));
+            assertTrue(rootCauseMessage(failure).contains("history is partial"), rootCauseMessage(failure));
+            assertEquals(3, scalar(url, user, password,
+                    "SELECT count(*) FROM \"" + schema + "\".flyway_schema_history WHERE success"));
+            assertFalse(tableExists(url, user, password, schema, "match_saga_outbox"));
+        } finally {
+            execute(url, user, password, "DROP SCHEMA IF EXISTS \"" + schema + "\" CASCADE");
+        }
+    }
+
     private static void assertTamperedSchemaRejected(String prefix, SchemaMutation mutation,
             SchemaAssertion assertion) throws Exception {
         String url = testUrl();
@@ -211,7 +239,7 @@ class FreshDatabaseFlywayProfilePostgresTest {
             assertTrue(rootCauseMessage(failure).contains("required PostgreSQL object"),
                     rootCauseMessage(failure));
             assertion.verify(schema);
-            assertEquals(3, scalar(url, user, password,
+            assertEquals(4, scalar(url, user, password,
                     "SELECT count(*) FROM \"" + schema + "\".flyway_schema_history WHERE success"));
         } finally {
             execute(url, user, password, "DROP SCHEMA IF EXISTS \"" + schema + "\" CASCADE");
@@ -241,7 +269,7 @@ class FreshDatabaseFlywayProfilePostgresTest {
                 .web(WebApplicationType.SERVLET)
                 .run(args)) {
             Flyway flyway = context.getBean(Flyway.class);
-            assertEquals(List.of("1", "2", "3"),
+            assertEquals(List.of("1", "2", "3", "4"),
                     java.util.Arrays.stream(flyway.info().applied())
                             .map(info -> info.getVersion().getVersion())
                             .toList());

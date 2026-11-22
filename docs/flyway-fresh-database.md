@@ -7,10 +7,10 @@ The profile enables Flyway, disables automatic baselining and cleaning, and sets
 - the connected PostgreSQL database name exactly matches `USERS_FLYWAY_FRESH_DATABASE_NAME`;
 - the configured Flyway schema is the connection's current schema;
 - `USERS_FLYWAY_FRESH_CONFIRMATION` exactly equals `INITIALIZE_FRESH_DATABASE:<database-name>`;
-- the target schema is empty, or it already has a complete, successful V1-V3 Flyway history that validates cleanly.
-- a previously migrated schema still has the PostgreSQL objects used by result and XP persistence: required columns and types, unique keys, validated foreign keys, and validated XP-related check constraints.
+- the target schema is empty, or it already has a complete, successful V1-V4 Flyway history that validates cleanly.
+- a previously migrated schema still has the PostgreSQL objects used by result, XP persistence, and the saga confirmation outbox: required columns and types, unique keys, validated foreign keys, and validated check constraints.
 
-After Flyway applies V1-V3 to an empty schema, the guard checks the same physical structure before startup continues to Hibernate. A missing or incompatible required object rejects startup; the guard does not recreate or repair it. An unknown, partially populated, baseline-only, or partially migrated schema is rejected before migrations run. The profile does not infer that an existing database is safe from its name alone. For an existing installation, do not select this profile; use a separately reviewed inventory and migration procedure.
+After Flyway applies V1-V4 to an empty schema, the guard checks the same physical structure before startup continues to Hibernate. A missing or incompatible required object rejects startup; the guard does not recreate or repair it. An unknown, partially populated, baseline-only, or partially migrated schema is rejected before migrations run. The profile does not infer that an existing database is safe from its name alone. For an existing installation, do not select this profile; use a separately reviewed inventory and migration procedure.
 
 Example for an operator-approved new database named `usuariosdb_fresh`:
 

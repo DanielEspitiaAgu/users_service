@@ -3,6 +3,11 @@ package co.edu.uptc.users_service.service;
 import co.edu.uptc.users_service.application.port.in.StatsUseCase;
 import co.edu.uptc.users_service.dto.ResultDTO;
 import co.edu.uptc.users_service.dto.ResultResponseDTO;
+import co.edu.uptc.users_service.messaging.MatchFinishedListener;
+import co.edu.uptc.users_service.messaging.MatchSagaOutboxRepository;
+import co.edu.uptc.users_service.exception.ResultConflictException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -11,6 +16,8 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
@@ -22,6 +29,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -34,6 +42,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK, properties = {
         "spring.flyway.enabled=false",
         "spring.jpa.hibernate.ddl-auto=validate",
+        "spring.kafka.listener.auto-startup=false",
+        "events.saga-outbox.poll-interval-ms=3600000",
+        "events.saga-outbox.initial-delay-ms=3600000",
         "eureka.client.enabled=false",
         "eureka.client.register-with-eureka=false",
         "eureka.client.fetch-registry=false"
@@ -47,6 +58,15 @@ class StatsServicePostgresIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private MatchFinishedListener matchFinishedListener;
+
+    @Autowired
+    private MatchSagaOutboxRepository outboxRepository;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     @DynamicPropertySource
     static void configureIsolatedPostgres(DynamicPropertyRegistry registry) {
@@ -99,10 +119,187 @@ class StatsServicePostgresIntegrationTest {
 
     @BeforeEach
     void clearTestRows() {
+        jdbcTemplate.update("DELETE FROM match_saga_outbox");
         jdbcTemplate.update("DELETE FROM classic_case_rewards");
         jdbcTemplate.update("DELETE FROM user_achievements");
         jdbcTemplate.update("DELETE FROM user_results");
         jdbcTemplate.update("DELETE FROM users");
+    }
+
+    @Test
+    void matchResultAndConfirmationOutboxCommitAtomicallyAndDuplicateDeliveryIsIdempotent() throws Exception {
+        String event = classicMatchFinishedEvent("outbox-match-1", "outbox-event-1");
+
+        matchFinishedListener.onMatchFinished(event);
+
+        assertEquals(1, scalar("SELECT count(*) FROM user_results WHERE match_id = 'outbox-match-1'"));
+        assertEquals(1, scalar("SELECT count(*) FROM match_saga_outbox "
+                + "WHERE source_event_id = 'outbox-event-1' AND status = 'PENDING'"));
+        assertEquals(50, scalar("SELECT experience FROM users WHERE external_id = 'outbox-player'"));
+
+        matchFinishedListener.onMatchFinished(event);
+
+        assertEquals(1, scalar("SELECT count(*) FROM user_results WHERE match_id = 'outbox-match-1'"));
+        assertEquals(1, scalar("SELECT count(*) FROM match_saga_outbox "
+                + "WHERE source_event_id = 'outbox-event-1'"));
+        assertEquals(50, scalar("SELECT experience FROM users WHERE external_id = 'outbox-player'"));
+
+        jdbcTemplate.update("UPDATE match_saga_outbox SET status = 'PUBLISHED', "
+                + "published_at = CURRENT_TIMESTAMP WHERE source_event_id = 'outbox-event-1'");
+        matchFinishedListener.onMatchFinished(event);
+
+        assertEquals(1, scalar("SELECT count(*) FROM match_saga_outbox "
+                + "WHERE source_event_id = 'outbox-event-1' AND status = 'PENDING'"));
+        assertEquals(1, scalar("SELECT count(*) FROM user_results WHERE match_id = 'outbox-match-1'"));
+        assertEquals(50, scalar("SELECT experience FROM users WHERE external_id = 'outbox-player'"));
+
+        assertThrows(ResultConflictException.class,
+                () -> matchFinishedListener.onMatchFinished(event.replace("corr-outbox-match-1",
+                        "conflicting-correlation")));
+        assertEquals(1, scalar("SELECT count(*) FROM match_saga_outbox "
+                + "WHERE source_event_id = 'outbox-event-1' AND status = 'PENDING'"));
+    }
+
+    @Test
+    void rollingBackListenerTransactionRollsBackResultsRewardAndOutboxTogether() throws Exception {
+        String event = classicMatchFinishedEvent("outbox-rollback-match", "outbox-rollback-event");
+        TransactionTemplate transaction = new TransactionTemplate(transactionManager);
+
+        transaction.executeWithoutResult(status -> {
+            try {
+                matchFinishedListener.onMatchFinished(event);
+            } catch (Exception error) {
+                throw new IllegalStateException(error);
+            }
+            status.setRollbackOnly();
+        });
+
+        assertEquals(0, scalar("SELECT count(*) FROM user_results WHERE match_id = 'outbox-rollback-match'"));
+        assertEquals(0, scalar("SELECT count(*) FROM classic_case_rewards "
+                + "WHERE case_id = 'outbox-case' AND user_id IN "
+                + "(SELECT id FROM users WHERE external_id = 'outbox-player')"));
+        assertEquals(0, scalar("SELECT count(*) FROM match_saga_outbox "
+                + "WHERE source_event_id = 'outbox-rollback-event'"));
+    }
+
+    @Test
+    void outboxLeaseExcludesAnotherPublisherAndPublishedRowsAreNotClaimedAgain() {
+        jdbcTemplate.update("""
+                INSERT INTO match_saga_outbox
+                    (event_id, source_event_id, source_fingerprint, match_id, correlation_id, payload)
+                VALUES ('outbox-lease-event', 'outbox-lease-source', ?, 'outbox-lease-match', 'corr-lease', '{}')
+                """, "0".repeat(64));
+
+        var firstClaim = outboxRepository.claimPending(10, 120);
+        var secondClaim = outboxRepository.claimPending(10, 120);
+
+        assertEquals(1, firstClaim.size());
+        assertEquals(0, secondClaim.size());
+        jdbcTemplate.update("UPDATE match_saga_outbox SET claimed_until = CURRENT_TIMESTAMP - "
+                + "INTERVAL '1 second' WHERE id = ?", firstClaim.get(0).id());
+        var recoveredClaim = outboxRepository.claimPending(10, 120);
+        assertEquals(1, recoveredClaim.size());
+        assertTrue(!firstClaim.get(0).claimToken().equals(recoveredClaim.get(0).claimToken()));
+        assertFalse(outboxRepository.markPublished(firstClaim.get(0).id(), firstClaim.get(0).claimToken()));
+        assertFalse(outboxRepository.scheduleRetry(firstClaim.get(0).id(), firstClaim.get(0).claimToken(),
+                1, "stale-claim"));
+        assertTrue(outboxRepository.markPublished(
+                recoveredClaim.get(0).id(), recoveredClaim.get(0).claimToken()));
+        assertEquals(0, outboxRepository.claimPending(10, 120).size());
+        assertEquals(0, outboxRepository.countPending());
+    }
+
+    @Test
+    void independentPublisherRepositoriesClaimConcurrentRowsWithoutOverlap() throws Exception {
+        jdbcTemplate.update("""
+                INSERT INTO match_saga_outbox
+                    (event_id, source_event_id, source_fingerprint, match_id, correlation_id, payload)
+                VALUES ('outbox-concurrent-a', 'outbox-concurrent-source-a', ?, 'outbox-match-a', 'corr-a', '{}'),
+                       ('outbox-concurrent-b', 'outbox-concurrent-source-b', ?, 'outbox-match-b', 'corr-b', '{}')
+                """, "0".repeat(64), "1".repeat(64));
+        var secondRepository = new MatchSagaOutboxRepository(jdbcTemplate, transactionManager);
+        var barrier = new CyclicBarrier(2);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<List<co.edu.uptc.users_service.messaging.ClaimedMatchSagaOutcome>> first = pool.submit(() -> {
+                barrier.await();
+                return outboxRepository.claimPending(1, 120);
+            });
+            Future<List<co.edu.uptc.users_service.messaging.ClaimedMatchSagaOutcome>> second = pool.submit(() -> {
+                barrier.await();
+                return secondRepository.claimPending(1, 120);
+            });
+
+            var firstClaim = first.get();
+            var secondClaim = second.get();
+            assertEquals(1, firstClaim.size());
+            assertEquals(1, secondClaim.size());
+            assertFalse(firstClaim.get(0).id() == secondClaim.get(0).id());
+            assertTrue(outboxRepository.markPublished(firstClaim.get(0).id(), firstClaim.get(0).claimToken()));
+            assertTrue(secondRepository.markPublished(secondClaim.get(0).id(), secondClaim.get(0).claimToken()));
+            assertEquals(0, outboxRepository.countPending());
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void versusParticipantsAndConfirmationArePersistedTogether() throws Exception {
+        String event = """
+                {"eventId":"versus-event-ok","correlationId":"versus-corr-ok","occurredAt":"2026-11-20T12:00:00Z",
+                 "payload":{"matchId":"versus-match-ok","caseId":"versus-case","mode":"VERSUS","timeSeconds":42,
+                 "results":[
+                   {"userId":"versus-winner","won":true,"xpDelta":100,"difficulty":null},
+                   {"userId":"versus-loser","won":false,"xpDelta":0,"difficulty":null}
+                 ]}}
+                """;
+
+        matchFinishedListener.onMatchFinished(event);
+
+        assertEquals(2, scalar("SELECT count(*) FROM user_results WHERE match_id = 'versus-match-ok'"));
+        assertEquals(1, scalar("SELECT count(*) FROM match_saga_outbox "
+                + "WHERE source_event_id = 'versus-event-ok' AND status = 'PENDING'"));
+        assertEquals(100, scalar("SELECT experience FROM users WHERE external_id = 'versus-winner'"));
+        assertEquals(0, scalar("SELECT experience FROM users WHERE external_id = 'versus-loser'"));
+        String payload = jdbcTemplate.queryForObject("SELECT payload FROM match_saga_outbox "
+                + "WHERE source_event_id = 'versus-event-ok'", String.class);
+        JsonNode confirmation = new ObjectMapper().readTree(payload);
+        assertEquals(2, confirmation.path("payload").path("results").size());
+    }
+
+    @Test
+    void versusSecondParticipantFailureRollsBackFirstParticipantAndOutbox() {
+        statsService.registerResult("versus-existing", new ResultDTO(
+                "versus-match-partial", "old-case", "VERSUS", true, 30, null, 0));
+        String event = """
+                {"eventId":"versus-event-partial","correlationId":"versus-corr-partial","occurredAt":"2026-11-20T12:00:00Z",
+                 "payload":{"matchId":"versus-match-partial","caseId":"new-case","mode":"VERSUS","timeSeconds":42,
+                 "results":[
+                   {"userId":"versus-new-first","won":true,"xpDelta":100,"difficulty":null},
+                   {"userId":"versus-existing","won":false,"xpDelta":0,"difficulty":null}
+                 ]}}
+                """;
+
+        assertThrows(ResultConflictException.class, () -> matchFinishedListener.onMatchFinished(event));
+
+        assertEquals(1, scalar("SELECT count(*) FROM user_results WHERE match_id = 'versus-match-partial'"));
+        assertEquals(0, scalar("SELECT count(*) FROM user_results r JOIN users u ON u.id = r.user_id "
+                + "WHERE u.external_id = 'versus-new-first'"));
+        assertEquals(0, scalar("SELECT experience FROM users WHERE external_id = 'versus-new-first'"));
+        assertEquals(0, scalar("SELECT count(*) FROM match_saga_outbox "
+                + "WHERE source_event_id = 'versus-event-partial'"));
+    }
+
+    private static String classicMatchFinishedEvent(String matchId, String eventId) {
+        return """
+                {"eventId":"%s","correlationId":"corr-%s","occurredAt":"2026-11-20T12:00:00Z",
+                 "payload":{"matchId":"%s","caseId":"outbox-case","mode":"CLASSIC","timeSeconds":42,
+                 "results":[{"userId":"outbox-player","won":true,"xpDelta":null,"difficulty":"EASY"}]}}
+                """.formatted(eventId, matchId, matchId);
+    }
+
+    private int scalar(String sql) {
+        return jdbcTemplate.queryForObject(sql, Integer.class);
     }
 
     @ParameterizedTest

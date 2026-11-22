@@ -87,13 +87,18 @@ class PostgresMigrationIntegrationTest {
 
         flyway.migrate();
 
-        assertEquals(List.of("1", "2", "3"), appliedVersions(schema));
+        assertEquals(List.of("1", "2", "3", "4"), appliedVersions(schema));
         assertTrue(columnExists(schema, "user_results", "match_id"));
         assertTrue(columnExists(schema, "user_results", "first_win_rewarded"));
         assertTrue(columnExists(schema, "user_results", "difficulty"));
         assertTrue(tableExists(schema, "classic_case_rewards"));
+        assertTrue(tableExists(schema, "match_saga_outbox"));
         assertTrue(constraintExists(schema, "user_results", "uq_user_results_user_match"));
         assertTrue(constraintExists(schema, "classic_case_rewards", "pk_classic_case_rewards"));
+        assertTrue(constraintExists(schema, "match_saga_outbox", "uq_match_saga_outbox_source"));
+        assertTrue(constraintExists(schema, "match_saga_outbox", "uq_match_saga_outbox_event"));
+        flyway.migrate();
+        assertEquals(List.of("1", "2", "3", "4"), appliedVersions(schema));
 
         long userId = insertUser(schema, "new-user");
         long firstResult = insertResult(schema, userId, "new-case", "CLASSIC", true, 90, 0, "match-1");
@@ -145,7 +150,7 @@ class PostgresMigrationIntegrationTest {
         baseline.baseline();
         baseline.migrate();
 
-        assertEquals(List.of("1", "2", "3"), appliedVersions(schema));
+        assertEquals(List.of("1", "2", "3", "4"), appliedVersions(schema));
         assertEquals(before, legacyResultRows(schema));
         assertEquals(beforeGroups, legacyResultGroups(schema));
         assertEquals(19, before.size());
@@ -196,7 +201,7 @@ class PostgresMigrationIntegrationTest {
 
         flyway(schema, "classpath:db/migration").migrate();
         assertTrue(columnExists(schema, "user_results", "match_id"));
-        assertEquals(List.of("1", "2", "3"), appliedVersions(schema));
+        assertEquals(List.of("1", "2", "3", "4"), appliedVersions(schema));
         assertEquals(before, legacyResultRows(schema));
     }
 
