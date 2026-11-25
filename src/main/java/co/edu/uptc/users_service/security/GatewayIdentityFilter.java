@@ -28,7 +28,7 @@ public class GatewayIdentityFilter extends OncePerRequestFilter {
 
     private static final Pattern EXTERNAL_ID = Pattern.compile("[A-Za-z0-9-]{1,64}");
     private static final Pattern INTERNAL_PATH = Pattern.compile(
-            "/users/[^/]+/(results|progression|display-name)");
+            "/users/[^/]+/(results|progression|solved-cases|display-name)");
     private static final Set<String> PLAYER_ROLES = Set.of("USER", "ADMIN");
     private static final List<String> DOCUMENTATION_PATHS = List.of(
             "/swagger-ui/", "/swagger-ui.html", "/v3/api-docs", "/swagger-resources/", "/webjars/");
@@ -108,6 +108,7 @@ public class GatewayIdentityFilter extends OncePerRequestFilter {
                 && (("POST".equals(request.getMethod()) && request.getRequestURI().endsWith("/results"))
                 || ("GET".equals(request.getMethod())
                 && (request.getRequestURI().endsWith("/progression")
+                || request.getRequestURI().endsWith("/solved-cases")
                 || request.getRequestURI().endsWith("/display-name"))));
     }
 
